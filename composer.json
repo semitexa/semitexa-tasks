@@ -1,0 +1,38 @@
+{
+    "name": "semitexa/tasks",
+    "description": "Semitexa OS task manager: an ORM-backed task list (status, progress, deadlines) with an AI-assistant integration that proactively reports auto-completed tasks",
+    "type": "semitexa-module",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Semitexa",
+            "email": "support@semitexa.com"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "semitexa/core": "*",
+        "semitexa/orm": "*",
+        "semitexa/llm": "*",
+        "semitexa/os": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Semitexa\\Tasks\\": "src/"
+        }
+    },
+    "extra": {
+        "semitexa-module": {
+            "name": "tasks",
+            "description": "Task manager (UI-skill + planner skills + background auto-complete tick)"
+        }
+    },
+    "version": "0.0.1",
+    "keywords": [
+        "semitexa",
+        "os",
+        "tasks",
+        "task-manager",
+        "productivity"
+    ]
+}
