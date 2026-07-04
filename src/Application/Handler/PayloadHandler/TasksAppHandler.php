@@ -23,7 +23,7 @@ final class TasksAppHandler implements TypedHandlerInterface
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tasks</title>
 <style>
-  :root { --bg:#0a1a2f; --panel:#0f2136; --line:rgba(148,163,184,.16); --text:#d6e6ff; --dim:#6f8bb0; --accent:#37b7ff; }
+  :root { --bg:#0a1a2f; --panel:#0f2136; --line:rgba(var(--line-rgb),.16); --text:#d6e6ff; --dim:#6f8bb0; --accent:#37b7ff; }
   * { box-sizing: border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:400 15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
   .wrap { max-width:820px; margin:0 auto; padding:22px 22px 40px; }
@@ -34,11 +34,11 @@ final class TasksAppHandler implements TypedHandlerInterface
   .new input[type=text]:focus { border-color:var(--accent); }
   .new input[type=number] { width:78px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; color:var(--text); font:inherit; outline:none; }
   .new label { display:inline-flex; align-items:center; gap:6px; color:var(--dim); font-size:13px; cursor:pointer; user-select:none; }
-  .btn { border:none; border-radius:10px; padding:10px 16px; font:600 14px/1 inherit; cursor:pointer; background:rgba(55,183,255,.18); color:var(--accent); }
-  .btn:hover { background:rgba(55,183,255,.3); }
-  .btn.mini { padding:6px 10px; font-size:12px; background:rgba(148,163,184,.12); color:#a8b8d4; }
-  .btn.mini:hover { background:rgba(148,163,184,.22); }
-  .btn.go { background:rgba(94,234,212,.16); color:#5eead4; }
+  .btn { border:none; border-radius:10px; padding:10px 16px; font:600 14px/1 inherit; cursor:pointer; background:rgba(var(--accent-rgb),.18); color:var(--accent); }
+  .btn:hover { background:rgba(var(--accent-rgb),.3); }
+  .btn.mini { padding:6px 10px; font-size:12px; background:rgba(var(--line-rgb),.12); color:var(--text3); }
+  .btn.mini:hover { background:rgba(var(--line-rgb),.22); }
+  .btn.go { background:rgba(94,234,212,.16); color:var(--ok); }
   .btn.x { background:transparent; color:var(--dim); padding:6px 8px; }
   .btn.x:hover { color:#e0655f; }
   ul { list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:10px; }
@@ -48,19 +48,43 @@ final class TasksAppHandler implements TypedHandlerInterface
   .title { flex:1; font-weight:500; }
   li.done .title { text-decoration:line-through; }
   .pill { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:3px 9px; border-radius:999px; white-space:nowrap; }
-  .pill.todo { background:rgba(148,163,184,.16); color:#a8b8d4; }
-  .pill.in_progress { background:rgba(55,183,255,.16); color:var(--accent); }
+  .pill.todo { background:rgba(var(--line-rgb),.16); color:var(--text3); }
+  .pill.in_progress { background:rgba(var(--accent-rgb),.16); color:var(--accent); }
   .pill.blocked { background:rgba(245,196,81,.16); color:#f5c451; }
-  .pill.done { background:rgba(94,234,212,.16); color:#5eead4; }
-  .pill.cancelled { background:rgba(148,163,184,.1); color:var(--dim); }
-  .auto { font-size:11px; color:var(--accent); border:1px solid rgba(55,183,255,.35); border-radius:999px; padding:2px 7px; }
-  .bar { height:6px; border-radius:999px; background:rgba(148,163,184,.14); margin-top:10px; overflow:hidden; }
+  .pill.done { background:rgba(94,234,212,.16); color:var(--ok); }
+  .pill.cancelled { background:rgba(var(--line-rgb),.1); color:var(--dim); }
+  .auto { font-size:11px; color:var(--accent); border:1px solid rgba(var(--accent-rgb),.35); border-radius:999px; padding:2px 7px; }
+  .bar { height:6px; border-radius:999px; background:rgba(var(--line-rgb),.14); margin-top:10px; overflow:hidden; }
   .bar > i { display:block; height:100%; background:var(--accent); border-radius:999px; transition:width .4s; }
   .meta { display:flex; gap:14px; margin-top:8px; color:var(--dim); font-size:12px; flex-wrap:wrap; }
   .meta .over { color:#e0655f; }
   .acts { display:flex; gap:6px; }
   .empty { color:var(--dim); text-align:center; padding:40px 10px; }
-</style></head>
+  :root{--accent-rgb:55,183,255;--line-rgb:148,163,184;--text3:#a8b8d4;--ok:#5eead4}
+  :root[data-mode=light]{color-scheme:light;--bg:#f4f7fb;--panel:#ffffff;--line:rgba(100,116,139,.25);--text:#243447;
+    --dim:#5b6c82;--accent:#1e7fb8;--accent-rgb:30,127,184;--line-rgb:100,116,139;--text3:#3b4c61;--ok:#0e8a72}
+</style><script>
+/* Follow the OS theme: pref lives server-side; 'auto' resolves with the shell's
+   exact rule (prefers-color-scheme, else dark 19:00-07:00). Self-resolution
+   works in web iframes AND OS-mode native windows. */
+(function(){
+  function applyMode(mode){
+    var eff=(mode==='light'||mode==='dark')?mode:(function(){
+      try{ if(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'; }catch(e){}
+      var h=new Date().getHours(); return (h>=19||h<7)?'dark':'light';
+    })();
+    var el=document.documentElement;
+    if(el.getAttribute('data-mode')!==eff){ el.setAttribute('data-mode',eff); el.style.colorScheme=eff; }
+  }
+  function syncMode(){
+    fetch('/os/preferences',{headers:{'Accept':'application/json'}})
+      .then(function(r){return r.json();}).then(function(d){ applyMode((d&&d.theme_mode)||'auto'); })
+      .catch(function(){});
+  }
+  syncMode(); window.addEventListener('focus', syncMode); setInterval(syncMode, 15000);
+})();
+</script>
+</head>
 <body><div class="wrap">
   <h1>Tasks</h1>
   <div class="sub" id="sub">—</div>
