@@ -10,6 +10,7 @@ use Semitexa\Core\Server\Lifecycle\ServerLifecycleContext;
 use Semitexa\Core\Server\Lifecycle\ServerLifecycleListenerInterface;
 use Semitexa\Core\Server\Lifecycle\ServerLifecyclePhase;
 use Semitexa\Tasks\Application\Service\TaskTicker;
+use Semitexa\Core\Server\Lifecycle\WorkerTimerRegistry;
 use Swoole\Timer;
 
 /**
@@ -62,6 +63,9 @@ final class TaskTickTimerListener implements ServerLifecycleListenerInterface
                 $ticker->tick();
             },
         );
+        // Group-clear on worker stop (core ClearWorkerTimersListener) — a tick must
+        // never fire into a tearing-down worker (coroutine-deadlock family).
+        WorkerTimerRegistry::register(self::$timerId);
     }
 
     /** Test/worker-stop hygiene: clear the per-worker timer. */
