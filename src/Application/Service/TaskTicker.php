@@ -26,6 +26,13 @@ final class TaskTicker
     #[InjectAsReadonly]
     protected ConversationStore $conversation;
 
+        /**
+     * A tick in flight — Timer::tick fires every 5s regardless of whether the
+     * previous callback finished; a stalled DB read would otherwise stack
+     * overlapping ticks (same family as the weaver's double-narration).
+     */
+    private bool $ticking = false;
+
     /**
      * One tick over the automated work-list: auto-start todos, advance progress
      * from elapsed/eta, and at the ETA complete the task + append a PROACTIVE
@@ -34,6 +41,21 @@ final class TaskTicker
      * @return array{started: int, advanced: int, completed: int}
      */
     public function tick(): array
+    {
+        if ($this->ticking) {
+            return ['started' => 0, 'advanced' => 0, 'completed' => 0]; // a tick is already in flight
+        }
+        $this->ticking = true;
+
+        try {
+            return $this->tickPass();
+        } finally {
+            $this->ticking = false;
+        }
+    }
+
+    /** @return array{started: int, advanced: int, completed: int} */
+    private function tickPass(): array
     {
         $now = new \DateTimeImmutable();
         $started = 0;
