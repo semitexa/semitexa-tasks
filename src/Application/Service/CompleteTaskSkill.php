@@ -25,6 +25,9 @@ use Semitexa\Tasks\Domain\Enum\TaskStatus;
     confirmation: AiConfirmationMode::Never,
     argumentPolicy: AiArgumentPolicy::Allowlisted,
     exposeArguments: ['title'],
+    argumentHints: [
+        'title' => 'The task title or a distinctive fragment of it.',
+    ],
     channels: ['web'],
 )]
 final class CompleteTaskSkill implements InvocableSkillInterface
