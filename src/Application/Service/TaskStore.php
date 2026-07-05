@@ -23,6 +23,13 @@ use Semitexa\Tasks\Domain\Enum\TaskStatus;
 #[AsService]
 final class TaskStore
 {
+    /**
+     * Hard cap on rows returned by {@see all()} — completed tasks accumulate
+     * forever and this serves request paths in a Swoole worker, so no list
+     * fetch may load the whole table. Generous for any task-list UI.
+     */
+    private const MAX_LISTED = 200;
+
     #[InjectAsReadonly]
     protected OrmManager $orm;
 
@@ -51,12 +58,22 @@ final class TaskStore
         return $task;
     }
 
-    /** All tasks, newest first. @return list<TaskResource> */
+    /**
+     * The most-recent tasks, newest first — bounded. Completed tasks are
+     * retained forever, and this serves list/mutate request paths inside a
+     * Swoole worker, so an unbounded fetch would load the whole ever-growing
+     * table into a worker. The default caps to {@see MAX_LISTED} most-recently-
+     * created rows; active tasks carry the newest ids, so they are always in
+     * the window while stale completed tasks fall off.
+     *
+     * @return list<TaskResource>
+     */
     public function all(): array
     {
         /** @var list<TaskResource> $rows */
         $rows = $this->repository()->query()
             ->orderBy(TaskResource::column('id'), Direction::Desc)
+            ->limit(self::MAX_LISTED)
             ->fetchAllAs(TaskResource::class, $this->orm()->getMapperRegistry());
 
         return $rows;
@@ -100,6 +117,17 @@ final class TaskStore
             return null;
         }
 
+        return $this->startOn($t);
+    }
+
+    /**
+     * Like {@see start()} but on a row already in hand — the tick loop iterates
+     * fully-hydrated {@see automatedActive()} rows, so re-`find()`ing each one
+     * by id is a redundant per-item SELECT (N wasted queries per tick, per
+     * worker). The resource-taking variants write directly.
+     */
+    public function startOn(TaskResource $t): TaskResource
+    {
         return $this->save($this->copy($t, [
             'status' => TaskStatus::InProgress->value,
             'started_at' => $t->started_at ?? new \DateTimeImmutable(),
@@ -113,9 +141,19 @@ final class TaskStore
         if ($t === null) {
             return null;
         }
+
+        return $this->setProgressOn($t, $progress);
+    }
+
+    /**
+     * {@see setProgress()} on a row already in hand — avoids the redundant
+     * per-item re-`find()` in the tick loop (see {@see startOn()}).
+     */
+    public function setProgressOn(TaskResource $t, int $progress): ?TaskResource
+    {
         $progress = max(0, min(100, $progress));
         if ($progress >= 100) {
-            return $this->complete($id);
+            return $this->complete($t->id);
         }
 
         return $this->save($this->copy($t, [

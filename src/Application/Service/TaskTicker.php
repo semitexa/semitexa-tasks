@@ -65,7 +65,7 @@ final class TaskTicker
         try {
             foreach ($this->tasks->automatedActive() as $task) {
                 if ($task->status === 'todo') {
-                    $this->tasks->start($task->id); // begins on its own; progresses next tick
+                    $this->tasks->startOn($task); // row already in hand — no re-find
                     $started++;
                     continue;
                 }
@@ -91,7 +91,7 @@ final class TaskTicker
                         $completed++;
                     }
                 } else {
-                    $this->tasks->setProgress($task->id, (int) \min(99, \max(1, \round($elapsed / $eta * 100))));
+                    $this->tasks->setProgressOn($task, (int) \min(99, \max(1, \round($elapsed / $eta * 100))));
                     $advanced++;
                 }
             }
