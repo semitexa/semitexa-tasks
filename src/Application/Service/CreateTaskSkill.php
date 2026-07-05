@@ -9,6 +9,7 @@ use Semitexa\Llm\Domain\Contract\InvocableSkillInterface;
 use Semitexa\Llm\Domain\Enum\AiArgumentPolicy;
 use Semitexa\Llm\Domain\Enum\AiConfirmationMode;
 use Semitexa\Llm\Domain\Enum\AiRiskLevel;
+use Semitexa\Os\Application\Service\OsPreferences;
 
 /**
  * Add a task by talking to the OS ("add a task to write the launch post",
@@ -54,7 +55,7 @@ final class CreateTaskSkill implements InvocableSkillInterface
         $deadlineArg = trim((string) ($arguments['deadline'] ?? ''));
         if ($deadlineArg !== '') {
             try {
-                $deadline = new \DateTimeImmutable($deadlineArg);
+                $deadline = self::toUtcInstant($deadlineArg, (new OsPreferences())->timezone());
             } catch (\Throwable) {
                 $deadline = null;
             }
@@ -73,5 +74,20 @@ final class CreateTaskSkill implements InvocableSkillInterface
         }
 
         return 'Added "' . $title . '" to your tasks.';
+    }
+
+    /**
+     * Resolve the planner's LOCAL wall-clock deadline ("2026-07-06 18:00",
+     * resolved from the current date) to a UTC instant. The user speaks in
+     * their own zone, but task ETAs and the deadline are stored, compared and
+     * displayed as UTC — a bare parse in the (UTC) server zone would land the
+     * deadline offset hours off for a non-UTC user. An input carrying an
+     * explicit offset/Z keeps that offset (PHP ignores $tz then); a bare
+     * wall-clock is interpreted in the OS timezone. Mirrors
+     * {@see \Semitexa\Os\Application\Service\CalendarCreateSkill}.
+     */
+    public static function toUtcInstant(string $wallClock, \DateTimeZone $tz): \DateTimeImmutable
+    {
+        return (new \DateTimeImmutable($wallClock, $tz))->setTimezone(new \DateTimeZone('UTC'));
     }
 }
