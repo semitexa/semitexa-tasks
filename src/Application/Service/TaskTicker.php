@@ -77,13 +77,19 @@ final class TaskTicker
 
                 $elapsed = $now->getTimestamp() - $task->started_at->getTimestamp();
                 if ($elapsed >= $eta) {
-                    $this->tasks->complete($task->id);
-                    $this->conversation->append(
-                        ConversationStore::ROLE_ASSISTANT,
-                        \sprintf('✅ Done — "%s" finished.', $task->title),
-                        ['proactive' => true, 'source' => 'task', 'kind' => 'task_completed', 'task_id' => $task->id],
-                    );
-                    $completed++;
+                    // Cross-worker single-winner: every worker's tick timer sees
+                    // this finishing task, but only the one that wins the atomic
+                    // completion claim announces it — otherwise the user gets N
+                    // duplicate "✅ Done" turns (the per-worker $ticking guard
+                    // cannot serialize across processes).
+                    if ($this->tasks->claimComplete($task->id)) {
+                        $this->conversation->append(
+                            ConversationStore::ROLE_ASSISTANT,
+                            \sprintf('✅ Done — "%s" finished.', $task->title),
+                            ['proactive' => true, 'source' => 'task', 'kind' => 'task_completed', 'task_id' => $task->id],
+                        );
+                        $completed++;
+                    }
                 } else {
                     $this->tasks->setProgress($task->id, (int) \min(99, \max(1, \round($elapsed / $eta * 100))));
                     $advanced++;

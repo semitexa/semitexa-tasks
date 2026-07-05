@@ -21,6 +21,11 @@
             "Semitexa\\Tasks\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Semitexa\\Tasks\\Tests\\": "tests/"
+        }
+    },
     "extra": {
         "semitexa-module": {
             "name": "tasks",

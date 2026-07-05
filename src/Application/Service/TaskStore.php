@@ -139,6 +139,36 @@ final class TaskStore
         ]));
     }
 
+    /**
+     * Atomically claim a task's completion — the cross-worker single-winner
+     * transition. Every Swoole worker arms its own tick timer, so all of them
+     * see the same finishing task; a find-then-update {@see complete()} lets
+     * each one flip the row and (via the ticker) append a duplicate proactive
+     * "done" turn. This guarded UPDATE transitions the row out of its
+     * non-done state ONCE: the first worker's write matches and returns
+     * rowCount 1, every later worker finds status already 'done' and returns
+     * 0. Only the caller that gets true should announce the completion.
+     *
+     * Each placeholder appears exactly once — native prepares
+     * (ATTR_EMULATE_PREPARES=false) reject a reused name.
+     */
+    public function claimComplete(string $id): bool
+    {
+        $result = $this->orm()->getAdapter()->execute(
+            'UPDATE `os_task`
+                SET status = :done_set, progress = 100, completed_at = :completed_at
+              WHERE id = :id AND status <> :done_guard',
+            [
+                'done_set' => TaskStatus::Done->value,
+                'completed_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s.u'),
+                'id' => $id,
+                'done_guard' => TaskStatus::Done->value,
+            ],
+        );
+
+        return $result->rowCount === 1;
+    }
+
     public function setStatus(string $id, TaskStatus $status): ?TaskResource
     {
         if ($status === TaskStatus::Done) {
