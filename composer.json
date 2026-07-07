@@ -33,7 +33,6 @@
             "description": "Task manager (UI-skill + planner skills + background auto-complete tick)"
         }
     },
-    "version": "0.0.1",
     "keywords": [
         "semitexa",
         "os",
