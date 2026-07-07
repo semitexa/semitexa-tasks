@@ -6,6 +6,8 @@ namespace Semitexa\Tasks\Application\Service;
 
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Tenant\TenantContextAccess;
+use Semitexa\Core\Tenant\TenantContextStoreInterface;
 use Semitexa\Orm\Application\Service\Uuid7;
 use Semitexa\Orm\OrmManager;
 use Semitexa\Orm\Query\Direction;
@@ -33,7 +35,23 @@ final class TaskStore
     #[InjectAsReadonly]
     protected OrmManager $orm;
 
+    /**
+     * Ambient-tenant seam (coroutine-local), resolved AT CALL TIME. Also works
+     * when the store is constructed bare (invocable skills) — falls back to the
+     * 'default' sentinel then, same as {@see currentTenantId}.
+     */
+    #[InjectAsReadonly]
+    protected TenantContextStoreInterface $tenantContextStore;
+
     private ?DomainRepository $repository = null;
+
+    /** Test seam — production path uses property injection. */
+    public function withTenantContextStore(TenantContextStoreInterface $store): self
+    {
+        $this->tenantContextStore = $store;
+
+        return $this;
+    }
 
     public function create(
         string $title,
@@ -44,6 +62,7 @@ final class TaskStore
     ): TaskResource {
         $task = new TaskResource(
             id: Uuid7::generate(),
+            tenant_id: $this->currentTenantId(),
             title: trim($title) !== '' ? trim($title) : 'Untitled task',
             status: TaskStatus::Todo->value,
             progress: 0,
@@ -53,7 +72,7 @@ final class TaskStore
             eta_seconds: $etaSeconds,
             deadline: $deadline,
         );
-        $this->repository()->insert($task);
+        $this->scoped()->insert($task);
 
         return $task;
     }
@@ -71,7 +90,7 @@ final class TaskStore
     public function all(): array
     {
         /** @var list<TaskResource> $rows */
-        $rows = $this->repository()->query()
+        $rows = $this->scoped()->query()
             ->orderBy(TaskResource::column('id'), Direction::Desc)
             ->limit(self::MAX_LISTED)
             ->fetchAllAs(TaskResource::class, $this->orm()->getMapperRegistry());
@@ -83,7 +102,7 @@ final class TaskStore
     public function automatedInProgress(): array
     {
         /** @var list<TaskResource> $rows */
-        $rows = $this->repository()->findBy([
+        $rows = $this->scoped()->findBy([
             'status' => TaskStatus::InProgress->value,
             'automated' => true,
         ]);
@@ -95,7 +114,7 @@ final class TaskStore
     public function automatedActive(): array
     {
         /** @var list<TaskResource> $rows */
-        $rows = $this->repository()->findBy(['automated' => true]);
+        $rows = $this->scoped()->findBy(['automated' => true]);
 
         return array_values(array_filter(
             $rows,
@@ -106,7 +125,7 @@ final class TaskStore
 
     public function find(string $id): ?TaskResource
     {
-        return $this->repository()->findById($id);
+        return $this->scoped()->findById($id);
     }
 
     /** Move a task to in_progress, stamping started_at on first start. */
@@ -195,10 +214,11 @@ final class TaskStore
         $result = $this->orm()->getAdapter()->execute(
             'UPDATE `os_task`
                 SET status = :done_set, progress = 100, completed_at = :completed_at
-              WHERE id = :id AND status <> :done_guard',
+              WHERE tenant_id = :tenant_id AND id = :id AND status <> :done_guard',
             [
                 'done_set' => TaskStatus::Done->value,
                 'completed_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s.u'),
+                'tenant_id' => $this->currentTenantId(),
                 'id' => $id,
                 'done_guard' => TaskStatus::Done->value,
             ],
@@ -230,7 +250,7 @@ final class TaskStore
         if ($t === null) {
             return false;
         }
-        $this->repository()->delete($t);
+        $this->scoped()->delete($t);
 
         return true;
     }
@@ -258,7 +278,7 @@ final class TaskStore
 
     private function save(TaskResource $t): TaskResource
     {
-        $this->repository()->update($t);
+        $this->scoped()->update($t);
 
         return $t;
     }
@@ -273,6 +293,7 @@ final class TaskStore
     {
         return new TaskResource(
             id: $t->id,
+            tenant_id: $t->tenant_id,
             title: $ch['title'] ?? $t->title,
             status: $ch['status'] ?? $t->status,
             progress: $ch['progress'] ?? $t->progress,
@@ -284,6 +305,24 @@ final class TaskStore
             started_at: array_key_exists('started_at', $ch) ? $ch['started_at'] : $t->started_at,
             completed_at: array_key_exists('completed_at', $ch) ? $ch['completed_at'] : $t->completed_at,
         );
+    }
+
+    /** Repository bound to the ambient tenant — the ORM gate filters every query. */
+    private function scoped(): DomainRepository
+    {
+        return $this->repository()->forTenant($this->currentTenantId());
+    }
+
+    /**
+     * Current tenant id, or the 'default' sentinel — never null, so the
+     * fail-closed tenant filter and the raw claimComplete WHERE bind a concrete
+     * value. Tolerates a bare-constructed store (no injected seam).
+     */
+    private function currentTenantId(): string
+    {
+        $context = isset($this->tenantContextStore) ? $this->tenantContextStore->tryGet() : null;
+
+        return TenantContextAccess::tenantIdOrDefault($context);
     }
 
     private function repository(): DomainRepository

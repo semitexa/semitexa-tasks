@@ -13,6 +13,7 @@
         "php": "^8.4",
         "semitexa/core": "*",
         "semitexa/orm": "*",
+        "semitexa/update": "*",
         "semitexa/llm": "*",
         "semitexa/os": "*"
     },

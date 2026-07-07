@@ -31,6 +31,7 @@ final class TaskCompletionClaimTest extends TestCase
         $this->db->execute(
             'CREATE TABLE os_task (
                 id TEXT PRIMARY KEY,
+                tenant_id TEXT,
                 status TEXT NOT NULL,
                 progress INTEGER NOT NULL DEFAULT 0,
                 completed_at TEXT
@@ -71,7 +72,7 @@ final class TaskCompletionClaimTest extends TestCase
     private function seed(string $id, string $status): void
     {
         $this->db->execute(
-            'INSERT INTO os_task (id, status, progress) VALUES (:id, :status, 0)',
+            'INSERT INTO os_task (id, tenant_id, status, progress) VALUES (:id, \'default\', :status, 0)',
             ['id' => $id, 'status' => $status],
         );
     }

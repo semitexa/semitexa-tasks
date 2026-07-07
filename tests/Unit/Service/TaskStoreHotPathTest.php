@@ -34,6 +34,7 @@ final class TaskStoreHotPathTest extends TestCase
         $this->db->execute(
             'CREATE TABLE os_task (
                 id TEXT PRIMARY KEY,
+                tenant_id TEXT,
                 title TEXT NOT NULL,
                 status TEXT NOT NULL,
                 progress INTEGER NOT NULL DEFAULT 0,
@@ -113,8 +114,8 @@ final class TaskStoreHotPathTest extends TestCase
     private function seedOne(string $id, string $status, int $progress): void
     {
         $this->db->execute(
-            'INSERT INTO os_task (id, title, status, progress, automated, source, created_at, started_at, eta_seconds)
-             VALUES (:id, :title, :status, :progress, 1, :source, :created, :started, 10)',
+            'INSERT INTO os_task (id, tenant_id, title, status, progress, automated, source, created_at, started_at, eta_seconds)
+             VALUES (:id, \'default\', :title, :status, :progress, 1, :source, :created, :started, 10)',
             [
                 'id' => $id,
                 'title' => 'T ' . $id,

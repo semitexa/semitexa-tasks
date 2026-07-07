@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Server\Lifecycle\ServerLifecycleContext;
 use Semitexa\Core\Server\Lifecycle\ServerLifecycleListenerInterface;
 use Semitexa\Core\Server\Lifecycle\ServerLifecyclePhase;
+use Semitexa\Core\Tenant\TenantFanoutInterface;
 use Semitexa\Tasks\Application\Service\TaskTicker;
 use Semitexa\Core\Server\Lifecycle\WorkerTimerRegistry;
 use Swoole\Timer;
@@ -44,6 +45,16 @@ final class TaskTickTimerListener implements ServerLifecycleListenerInterface
     #[InjectAsReadonly]
     protected TaskTicker $ticker;
 
+    /**
+     * Per-tenant fan-out: the timer is context-less, so a bare tick would
+     * advance/complete every tenant's automated tasks under the 'default'
+     * partition — misattributing tasks and posting completion notices into the
+     * wrong transcript. Running the tick under each tenant's context keeps
+     * tasks (TenantScoped) and their notices tenant-local.
+     */
+    #[InjectAsReadonly]
+    protected TenantFanoutInterface $tenants;
+
     public function handle(ServerLifecycleContext $context): void
     {
         if (!class_exists(Timer::class, false)) {
@@ -57,10 +68,14 @@ final class TaskTickTimerListener implements ServerLifecycleListenerInterface
         }
 
         $ticker = $this->ticker;
+        $tenants = $this->tenants;
         self::$timerId = Timer::tick(
             self::TICK_INTERVAL_MS,
-            static function () use ($ticker): void {
-                $ticker->tick();
+            static function () use ($ticker, $tenants): void {
+                // One tick per tenant, each under its own bound context.
+                $tenants->eachTenant(static function () use ($ticker): void {
+                    $ticker->tick();
+                });
             },
         );
         // Group-clear on worker stop (core ClearWorkerTimersListener) — a tick must
