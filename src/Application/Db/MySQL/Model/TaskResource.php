@@ -9,6 +9,7 @@ use Semitexa\Orm\Attribute\Column;
 use Semitexa\Orm\Attribute\FromTable;
 use Semitexa\Orm\Attribute\Index;
 use Semitexa\Orm\Attribute\PrimaryKey;
+use Semitexa\Orm\Attribute\TenantScoped;
 use Semitexa\Orm\Metadata\HasColumnReferences;
 use Semitexa\Orm\Metadata\HasRelationReferences;
 
@@ -24,8 +25,9 @@ use Semitexa\Orm\Metadata\HasRelationReferences;
  * `final readonly` per the ORM contract: mutations rebuild the row (see TaskStore).
  */
 #[FromTable(name: 'os_task')]
-#[Index(columns: ['status'], name: 'idx_os_task_status')]
-#[Index(columns: ['created_at'], name: 'idx_os_task_created')]
+#[Index(columns: ['tenant_id', 'status'], name: 'idx_os_task_status')]
+#[Index(columns: ['tenant_id', 'created_at'], name: 'idx_os_task_created')]
+#[TenantScoped(strategy: 'same_storage', column: 'tenant_id')]
 final readonly class TaskResource
 {
     use HasColumnReferences;
@@ -35,6 +37,10 @@ final readonly class TaskResource
         #[PrimaryKey(strategy: 'manual')]
         #[Column(type: MySqlType::Varchar, length: 36)]
         public string $id,
+
+        /** Owning tenant; the ORM gate filters every task read by this. */
+        #[Column(type: MySqlType::Varchar, length: 64, nullable: true)]
+        public ?string $tenant_id,
 
         #[Column(type: MySqlType::Varchar, length: 255)]
         public string $title,
