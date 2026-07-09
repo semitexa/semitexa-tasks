@@ -73,9 +73,20 @@ final class TaskTickTimerListener implements ServerLifecycleListenerInterface
             self::TICK_INTERVAL_MS,
             static function () use ($ticker, $tenants): void {
                 // One tick per tenant, each under its own bound context.
-                $tenants->eachTenant(static function () use ($ticker): void {
+                $defaultCovered = false;
+                $tenants->eachTenant(static function (string $tenantId) use ($ticker, &$defaultCovered): void {
+                    $defaultCovered = $defaultCovered || $tenantId === 'default';
                     $ticker->tick();
                 });
+                // The 'default' partition is real work too: a request with no
+                // resolvable tenant (bare localhost / single-user OS box) files
+                // its tasks there, but a multi-tenant registry's fan-out never
+                // visits it — leaving those tasks un-ticked and the plan row
+                // un-heartbeated. Tick it bare (context-less resolves to the
+                // 'default' sentinel) exactly when the fan-out skipped it.
+                if (!$defaultCovered) {
+                    $ticker->tick();
+                }
             },
         );
         // Group-clear on worker stop (core ClearWorkerTimersListener) — a tick must
