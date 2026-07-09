@@ -7,6 +7,7 @@ namespace Semitexa\Tasks\Application\Service;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Os\Application\Service\ConversationStore;
+use Semitexa\Os\Application\Service\ProcessRegistry;
 
 /**
  * The one shared task-tick code path — advance automated tasks toward their ETA
@@ -25,6 +26,14 @@ final class TaskTicker
 
     #[InjectAsReadonly]
     protected ConversationStore $conversation;
+
+    /** The ticker is one producer among many now — every automated task mirrors into the OS process registry. */
+    #[InjectAsReadonly]
+    protected ProcessRegistry $processes;
+
+    /** Keeps the standing "Today's plan" row alive (heartbeat) and rolls the day over. */
+    #[InjectAsReadonly]
+    protected TodayPlanReporter $todayPlan;
 
         /**
      * A tick in flight — Timer::tick fires every 5s regardless of whether the
@@ -66,6 +75,13 @@ final class TaskTicker
             foreach ($this->tasks->automatedActive() as $task) {
                 if ($task->status === 'todo') {
                     $this->tasks->startOn($task); // row already in hand — no re-find
+                    $this->processes->begin(
+                        id: 'task:' . $task->id,
+                        source: 'tasks',
+                        title: $task->title,
+                        progress: 0,
+                        detail: ($task->eta_seconds ?? 0) > 0 ? \sprintf('timer · ~%ds to auto-complete', $task->eta_seconds) : null,
+                    );
                     $started++;
                     continue;
                 }
@@ -83,6 +99,7 @@ final class TaskTicker
                     // duplicate "✅ Done" turns (the per-worker $ticking guard
                     // cannot serialize across processes).
                     if ($this->tasks->claimComplete($task->id)) {
+                        $this->processes->complete('task:' . $task->id);
                         $this->conversation->append(
                             ConversationStore::ROLE_ASSISTANT,
                             \sprintf('✅ Done — "%s" finished.', $task->title),
@@ -91,12 +108,35 @@ final class TaskTicker
                         $completed++;
                     }
                 } else {
-                    $this->tasks->setProgressOn($task, (int) \min(99, \max(1, \round($elapsed / $eta * 100))));
+                    $pct = (int) \min(99, \max(1, \round($elapsed / $eta * 100)));
+                    $this->tasks->setProgressOn($task, $pct);
+                    // Mirror into the registry with the honest semantics spelled
+                    // out: this % is elapsed-vs-estimate, not measured work.
+                    $detail = \sprintf('timer · ~%ds to auto-complete', \max(0, $eta - $elapsed));
+                    if ($this->processes->progress('task:' . $task->id, $pct, $detail) === null) {
+                        // task predates its registry row (started before deploy) — register it now
+                        $this->processes->begin(
+                            id: 'task:' . $task->id,
+                            source: 'tasks',
+                            title: $task->title,
+                            progress: $pct,
+                            detail: $detail,
+                        );
+                    }
                     $advanced++;
                 }
             }
         } catch (\Throwable) {
             // best-effort — never break the worker's event loop
+        }
+
+        // The plan row's keep-alive + day rollover. Interactive mutations
+        // already refresh via TaskStore; this covers the quiet stretches
+        // (write-avoidant: heartbeats at half the stall TTL, else no write).
+        try {
+            $this->todayPlan->refresh($this->tasks->all());
+        } catch (\Throwable) {
+            // best-effort
         }
 
         return ['started' => $started, 'advanced' => $advanced, 'completed' => $completed];

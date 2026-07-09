@@ -35,6 +35,10 @@ final class TaskStore
     #[InjectAsReadonly]
     protected OrmManager $orm;
 
+    /** Keeps the aggregate "Today's plan" registry row in step with every user-visible mutation. */
+    #[InjectAsReadonly]
+    protected TodayPlanReporter $todayPlan;
+
     /**
      * Ambient-tenant seam (coroutine-local), resolved AT CALL TIME. Also works
      * when the store is constructed bare (invocable skills) — falls back to the
@@ -73,6 +77,7 @@ final class TaskStore
             deadline: $deadline,
         );
         $this->scoped()->insert($task);
+        $this->reportTodayPlan();
 
         return $task;
     }
@@ -189,11 +194,14 @@ final class TaskStore
             return null;
         }
 
-        return $this->save($this->copy($t, [
+        $done = $this->save($this->copy($t, [
             'status' => TaskStatus::Done->value,
             'progress' => 100,
             'completed_at' => new \DateTimeImmutable(),
         ]));
+        $this->reportTodayPlan();
+
+        return $done;
     }
 
     /**
@@ -240,8 +248,10 @@ final class TaskStore
         if ($status === TaskStatus::InProgress) {
             $changes['started_at'] = $t->started_at ?? new \DateTimeImmutable();
         }
+        $updated = $this->save($this->copy($t, $changes));
+        $this->reportTodayPlan();
 
-        return $this->save($this->copy($t, $changes));
+        return $updated;
     }
 
     public function remove(string $id): bool
@@ -251,6 +261,7 @@ final class TaskStore
             return false;
         }
         $this->scoped()->delete($t);
+        $this->reportTodayPlan();
 
         return true;
     }
@@ -305,6 +316,24 @@ final class TaskStore
             started_at: array_key_exists('started_at', $ch) ? $ch['started_at'] : $t->started_at,
             completed_at: array_key_exists('completed_at', $ch) ? $ch['completed_at'] : $t->completed_at,
         );
+    }
+
+    /**
+     * Refresh the "Today's plan" registry row after a user-visible mutation
+     * (create / complete / status / delete). Best-effort by design AND placed
+     * HERE, not in callers — skills construct this store bare, and every one
+     * of them must move the plan bar the instant a task closes.
+     */
+    private function reportTodayPlan(): void
+    {
+        try {
+            if (!isset($this->todayPlan)) {
+                $this->todayPlan = new TodayPlanReporter();
+            }
+            $this->todayPlan->refresh($this->all());
+        } catch (\Throwable) {
+            // the plan bar must never break a task mutation
+        }
     }
 
     /** Repository bound to the ambient tenant — the ORM gate filters every query. */
