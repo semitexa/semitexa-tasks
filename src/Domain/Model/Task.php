@@ -106,21 +106,27 @@ final readonly class Task
      */
     public function with(array $changes): self
     {
-        $take = fn (string $key, mixed $current): mixed => array_key_exists($key, $changes) ? $changes[$key] : $current;
-
         return new self(
             id: $this->id,
             tenantId: $this->tenantId,
-            title: $take('title', $this->title),
-            status: $take('status', $this->status),
-            progress: $take('progress', $this->progress),
-            automated: $take('automated', $this->automated),
+            title: is_string($changes['title'] ?? null) ? $changes['title'] : $this->title,
+            status: is_string($changes['status'] ?? null) ? $changes['status'] : $this->status,
+            progress: is_int($changes['progress'] ?? null) ? $changes['progress'] : $this->progress,
+            automated: is_bool($changes['automated'] ?? null) ? $changes['automated'] : $this->automated,
             source: $this->source,
             createdAt: $this->createdAt,
-            etaSeconds: $take('etaSeconds', $this->etaSeconds),
-            deadline: $take('deadline', $this->deadline),
-            startedAt: $take('startedAt', $this->startedAt),
-            completedAt: $take('completedAt', $this->completedAt),
+            etaSeconds: array_key_exists('etaSeconds', $changes)
+                ? (is_int($changes['etaSeconds']) ? $changes['etaSeconds'] : null)
+                : $this->etaSeconds,
+            deadline: array_key_exists('deadline', $changes)
+                ? ($changes['deadline'] instanceof \DateTimeImmutable ? $changes['deadline'] : null)
+                : $this->deadline,
+            startedAt: array_key_exists('startedAt', $changes)
+                ? ($changes['startedAt'] instanceof \DateTimeImmutable ? $changes['startedAt'] : null)
+                : $this->startedAt,
+            completedAt: array_key_exists('completedAt', $changes)
+                ? ($changes['completedAt'] instanceof \DateTimeImmutable ? $changes['completedAt'] : null)
+                : $this->completedAt,
         );
     }
 }
