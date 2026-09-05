@@ -10,6 +10,7 @@ use Semitexa\Llm\Domain\Enum\AiArgumentPolicy;
 use Semitexa\Llm\Domain\Enum\AiConfirmationMode;
 use Semitexa\Llm\Domain\Enum\AiRiskLevel;
 use Semitexa\Tasks\Domain\Enum\TaskStatus;
+use Semitexa\Tasks\Domain\Model\Task;
 
 /**
  * Mark a task done by talking to the OS ("mark the launch post done", "I finished
@@ -42,12 +43,12 @@ final class CompleteTaskSkill implements InvocableSkillInterface
         $store = new TaskStore();
         $open = array_filter(
             $store->all(),
-            static fn($t) => $t->status !== TaskStatus::Done->value && $t->status !== TaskStatus::Cancelled->value,
+            static fn (Task $t): bool => $t->getStatus() !== TaskStatus::Done->value && $t->getStatus() !== TaskStatus::Cancelled->value,
         );
 
         $match = null;
         foreach ($open as $t) {
-            if (str_contains(strtolower($t->title), $q)) {
+            if (str_contains(strtolower($t->getTitle()), $q)) {
                 $match = $t;
                 break;
             }
@@ -57,8 +58,8 @@ final class CompleteTaskSkill implements InvocableSkillInterface
             return 'I couldn\'t find an open task matching "' . trim((string) ($arguments['title'] ?? '')) . '".';
         }
 
-        $store->complete($match->id);
+        $store->complete($match->getId());
 
-        return 'Marked done: "' . $match->title . '". Nice.';
+        return 'Marked done: "' . $match->getTitle() . '". Nice.';
     }
 }

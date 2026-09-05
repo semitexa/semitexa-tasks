@@ -10,6 +10,7 @@ use Semitexa\Llm\Domain\Enum\AiArgumentPolicy;
 use Semitexa\Llm\Domain\Enum\AiConfirmationMode;
 use Semitexa\Llm\Domain\Enum\AiRiskLevel;
 use Semitexa\Tasks\Domain\Enum\TaskStatus;
+use Semitexa\Tasks\Domain\Model\Task;
 
 /**
  * Answer "what are my tasks?" in the chat — a short readout of the open tasks
@@ -31,7 +32,7 @@ final class ListTasksSkill implements InvocableSkillInterface
     {
         $open = array_filter(
             (new TaskStore())->all(),
-            static fn($t) => $t->status !== TaskStatus::Done->value && $t->status !== TaskStatus::Cancelled->value,
+            static fn (Task $t): bool => $t->getStatus() !== TaskStatus::Done->value && $t->getStatus() !== TaskStatus::Cancelled->value,
         );
 
         if ($open === []) {
@@ -40,9 +41,9 @@ final class ListTasksSkill implements InvocableSkillInterface
 
         $lines = [];
         foreach ($open as $t) {
-            $status = TaskStatus::tryFrom($t->status) ?? TaskStatus::Todo;
-            $suffix = $status === TaskStatus::InProgress ? ' (' . $t->progress . '%)' : '';
-            $lines[] = '• ' . $t->title . ' — ' . strtolower($status->label()) . $suffix;
+            $status = TaskStatus::tryFrom($t->getStatus()) ?? TaskStatus::Todo;
+            $suffix = $status === TaskStatus::InProgress ? ' (' . $t->getProgress() . '%)' : '';
+            $lines[] = '• ' . $t->getTitle() . ' — ' . strtolower($status->label()) . $suffix;
         }
 
         $n = count($lines);

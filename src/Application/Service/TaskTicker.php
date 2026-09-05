@@ -73,37 +73,39 @@ final class TaskTicker
 
         try {
             foreach ($this->tasks->automatedActive() as $task) {
-                if ($task->status === 'todo') {
+                $eta = $task->getEtaSeconds() ?? 0;
+
+                if ($task->getStatus() === 'todo') {
                     $this->tasks->startOn($task); // row already in hand — no re-find
                     $this->processes->begin(
-                        id: 'task:' . $task->id,
+                        id: 'task:' . $task->getId(),
                         source: 'tasks',
-                        title: $task->title,
+                        title: $task->getTitle(),
                         progress: 0,
-                        detail: ($task->eta_seconds ?? 0) > 0 ? \sprintf('timer · ~%ds to auto-complete', $task->eta_seconds) : null,
+                        detail: $eta > 0 ? \sprintf('timer · ~%ds to auto-complete', $eta) : null,
                     );
                     $started++;
                     continue;
                 }
 
-                $eta = $task->eta_seconds ?? 0;
-                if ($eta <= 0 || $task->started_at === null) {
+                $startedAt = $task->getStartedAt();
+                if ($eta <= 0 || $startedAt === null) {
                     continue;
                 }
 
-                $elapsed = $now->getTimestamp() - $task->started_at->getTimestamp();
+                $elapsed = $now->getTimestamp() - $startedAt->getTimestamp();
                 if ($elapsed >= $eta) {
                     // Cross-worker single-winner: every worker's tick timer sees
                     // this finishing task, but only the one that wins the atomic
                     // completion claim announces it — otherwise the user gets N
                     // duplicate "✅ Done" turns (the per-worker $ticking guard
                     // cannot serialize across processes).
-                    if ($this->tasks->claimComplete($task->id)) {
-                        $this->processes->complete('task:' . $task->id);
+                    if ($this->tasks->claimComplete($task->getId())) {
+                        $this->processes->complete('task:' . $task->getId());
                         $this->conversation->append(
                             ConversationStore::ROLE_ASSISTANT,
-                            \sprintf('✅ Done — "%s" finished.', $task->title),
-                            ['proactive' => true, 'source' => 'task', 'kind' => 'task_completed', 'task_id' => $task->id],
+                            \sprintf('✅ Done — "%s" finished.', $task->getTitle()),
+                            ['proactive' => true, 'source' => 'task', 'kind' => 'task_completed', 'task_id' => $task->getId()],
                         );
                         $completed++;
                     }
@@ -113,12 +115,12 @@ final class TaskTicker
                     // Mirror into the registry with the honest semantics spelled
                     // out: this % is elapsed-vs-estimate, not measured work.
                     $detail = \sprintf('timer · ~%ds to auto-complete', \max(0, $eta - $elapsed));
-                    if ($this->processes->progress('task:' . $task->id, $pct, $detail) === null) {
+                    if ($this->processes->progress('task:' . $task->getId(), $pct, $detail) === null) {
                         // task predates its registry row (started before deploy) — register it now
                         $this->processes->begin(
-                            id: 'task:' . $task->id,
+                            id: 'task:' . $task->getId(),
                             source: 'tasks',
-                            title: $task->title,
+                            title: $task->getTitle(),
                             progress: $pct,
                             detail: $detail,
                         );

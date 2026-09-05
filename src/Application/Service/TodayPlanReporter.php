@@ -8,7 +8,7 @@ use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Os\Application\Service\OsPreferences;
 use Semitexa\Os\Application\Service\ProcessRegistry;
-use Semitexa\Tasks\Application\Db\MySQL\Model\TaskResource;
+use Semitexa\Tasks\Domain\Model\Task;
 use Semitexa\Tasks\Domain\Enum\TaskStatus;
 
 /**
@@ -41,7 +41,7 @@ final class TodayPlanReporter
     #[InjectAsReadonly]
     protected ProcessRegistry $registry;
 
-    /** @param list<TaskResource> $tasks the CURRENT task list (bounded, newest first) */
+    /** @param list<Task> $tasks the CURRENT task list (bounded, newest first) */
     public function refresh(array $tasks): void
     {
         try {
@@ -52,17 +52,17 @@ final class TodayPlanReporter
 
             $plan = array_values(array_filter(
                 $tasks,
-                fn(TaskResource $t): bool => !$t->automated
-                    && $t->status !== TaskStatus::Cancelled->value
+                fn (Task $t): bool => !$t->isAutomated()
+                    && $t->getStatus() !== TaskStatus::Cancelled->value
                     && $this->plannedDay($t, $tz) === $today,
             ));
             $total = count($plan);
-            $done = count(array_filter($plan, static fn(TaskResource $t): bool => $t->status === TaskStatus::Done->value));
+            $done = count(array_filter($plan, static fn (Task $t): bool => $t->getStatus() === TaskStatus::Done->value));
 
             $id = 'tasks:today:' . $today;
             $row = $this->registry()->find($id);
             $rowFinal = $row !== null
-                && in_array($row->status, ['done', 'failed'], true);
+                && in_array($row->getStatus(), ['done', 'failed'], true);
 
             if ($total === 0) {
                 // Plan emptied (all deleted) — close a live row; report nothing otherwise.
@@ -80,7 +80,7 @@ final class TodayPlanReporter
                 if ($row === null) {
                     $this->registry()->begin(id: $id, source: 'tasks', title: "Today's plan", progress: $pct, detail: $detail);
                 }
-                if ($row === null || !$rowFinal || $row->detail !== $detail) {
+                if ($row === null || !$rowFinal || $row->getDetail() !== $detail) {
                     $this->registry()->complete($id, $detail);
                 }
 
@@ -95,13 +95,14 @@ final class TodayPlanReporter
                 return;
             }
 
-            if ($row->progress !== $pct || $row->detail !== $detail) {
+            if ($row->getProgress() !== $pct || $row->getDetail() !== $detail) {
                 $this->registry()->progress($id, $pct, $detail);
 
                 return;
             }
 
-            if (time() - $row->updated_at->getTimestamp() >= self::HEARTBEAT_SECONDS) {
+            $touchedAt = $row->getUpdatedAt();
+            if ($touchedAt === null || time() - $touchedAt->getTimestamp() >= self::HEARTBEAT_SECONDS) {
                 $this->registry()->heartbeat($id);
             }
         } catch (\Throwable) {
@@ -110,9 +111,11 @@ final class TodayPlanReporter
     }
 
     /** The user-local day a task belongs to: its deadline day, else its creation day. */
-    private function plannedDay(TaskResource $t, \DateTimeZone $tz): string
+    private function plannedDay(Task $t, \DateTimeZone $tz): string
     {
-        return ($t->deadline ?? $t->created_at)->setTimezone($tz)->format('Y-m-d');
+        $day = $t->getDeadline() ?? $t->getCreatedAt() ?? new \DateTimeImmutable();
+
+        return $day->setTimezone($tz)->format('Y-m-d');
     }
 
     /**
@@ -124,12 +127,13 @@ final class TodayPlanReporter
         $yesterday = (new \DateTimeImmutable($today, $tz))->modify('-1 day')->format('Y-m-d');
         $yid = 'tasks:today:' . $yesterday;
         $row = $this->registry()->find($yid);
-        if ($row === null || in_array($row->status, ['done', 'failed'], true)) {
+        if ($row === null || in_array($row->getStatus(), ['done', 'failed'], true)) {
             return;
         }
-        // NB: address by the producer id, not $row->id — the stored PK carries
-        // the registry's internal tenant prefix.
-        $note = trim(($row->detail !== null ? $row->detail . ' · ' : '') . 'day ended');
+        // NB: address by the producer id, not the row's own — the stored PK
+        // carries the registry's internal tenant prefix.
+        $detail = $row->getDetail();
+        $note = trim(($detail !== null ? $detail . ' · ' : '') . 'day ended');
         $this->registry()->fail($yid, $note);
     }
 

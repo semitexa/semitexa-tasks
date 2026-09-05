@@ -104,7 +104,11 @@ final class TaskStore
         return $rows;
     }
 
-    /** Automated tasks currently running — the tick's work-list. @return list<Task> */
+    /**
+     * Automated tasks currently running — the tick's work-list.
+     *
+     * @return list<Task>
+     */
     public function automatedInProgress(): array
     {
         /** @var list<Task> $rows */
@@ -116,7 +120,11 @@ final class TaskStore
         return $rows;
     }
 
-    /** Automated tasks not yet finished — the tick's full work-list. @return list<Task> */
+    /**
+     * Automated tasks not yet finished — the tick's full work-list.
+     *
+     * @return list<Task>
+     */
     public function automatedActive(): array
     {
         /** @var list<Task> $rows */
@@ -131,7 +139,9 @@ final class TaskStore
 
     public function find(string $id): ?Task
     {
-        return $this->scoped()->findById($id);
+        $task = $this->scoped()->findById($id);
+
+        return $task instanceof Task ? $task : null;
     }
 
     /** Move a task to in_progress, stamping started_at on first start. */
