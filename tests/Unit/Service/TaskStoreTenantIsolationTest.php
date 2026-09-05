@@ -61,15 +61,15 @@ final class TaskStoreTenantIsolationTest extends TestCase
         $this->ctx->switchTo('globex');
         self::assertSame([], $this->store->all(), 'Globex sees none of Acme\'s tasks.');
         self::assertSame([], $this->store->automatedActive(), 'Globex has no automated tasks.');
-        self::assertNull($this->store->find($acme->id), 'A foreign task id must not resolve.');
-        self::assertFalse($this->store->claimComplete($acme->id), 'Globex cannot complete Acme\'s task.');
-        self::assertFalse($this->store->remove($acme->id), 'Globex cannot remove Acme\'s task.');
+        self::assertNull($this->store->find($acme->getId()), 'A foreign task id must not resolve.');
+        self::assertFalse($this->store->claimComplete($acme->getId()), 'Globex cannot complete Acme\'s task.');
+        self::assertFalse($this->store->remove($acme->getId()), 'Globex cannot remove Acme\'s task.');
 
         // Acme's task is intact and still todo.
         $this->ctx->switchTo('acme');
         self::assertCount(1, $this->store->all());
-        self::assertNotNull($this->store->find($acme->id));
-        self::assertTrue($this->store->claimComplete($acme->id), 'The owner completes its own task.');
+        self::assertNotNull($this->store->find($acme->getId()));
+        self::assertTrue($this->store->claimComplete($acme->getId()), 'The owner completes its own task.');
     }
 
     #[Test]
@@ -83,9 +83,9 @@ final class TaskStoreTenantIsolationTest extends TestCase
         // Each tenant's automated set is exactly its own — the shape the
         // per-tenant ticker fan-out relies on.
         $this->ctx->switchTo('acme');
-        $acmeAutomated = array_map(static fn ($t) => $t->title, $this->store->automatedActive());
+        $acmeAutomated = array_map(static fn ($t) => $t->getTitle(), $this->store->automatedActive());
         $this->ctx->switchTo('globex');
-        $globexAutomated = array_map(static fn ($t) => $t->title, $this->store->automatedActive());
+        $globexAutomated = array_map(static fn ($t) => $t->getTitle(), $this->store->automatedActive());
 
         self::assertSame(['Acme A'], $acmeAutomated);
         self::assertSame(['Globex G'], $globexAutomated);
