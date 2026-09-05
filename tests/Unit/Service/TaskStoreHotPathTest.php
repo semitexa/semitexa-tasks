@@ -61,8 +61,8 @@ final class TaskStoreHotPathTest extends TestCase
 
         self::assertCount(200, $rows, 'all() must be bounded to the hard cap.');
         // Newest-first, so the window is the 250 → 51 most-recently-created rows.
-        self::assertSame('task-00000250', $rows[0]->id);
-        self::assertSame('task-00000051', $rows[array_key_last($rows)]->id);
+        self::assertSame('task-00000250', $rows[0]->getId());
+        self::assertSame('task-00000051', $rows[array_key_last($rows)]->getId());
     }
 
     #[Test]
@@ -75,8 +75,8 @@ final class TaskStoreHotPathTest extends TestCase
         $updated = $this->store->setProgressOn($row, 60);
 
         self::assertNotNull($updated);
-        self::assertSame(60, $updated->progress);
-        self::assertSame(60, $this->store->find('task-a')?->progress, 'the write landed on the DB row');
+        self::assertSame(60, $updated->getProgress());
+        self::assertSame(60, $this->store->find('task-a')?->getProgress(), 'the write landed on the DB row');
     }
 
     #[Test]
@@ -88,7 +88,7 @@ final class TaskStoreHotPathTest extends TestCase
 
         $this->store->setProgressOn($row, 100);
 
-        self::assertSame('done', $this->store->find('task-b')?->status);
+        self::assertSame('done', $this->store->find('task-b')?->getStatus());
     }
 
     #[Test]
@@ -100,8 +100,8 @@ final class TaskStoreHotPathTest extends TestCase
 
         $started = $this->store->startOn($row);
 
-        self::assertSame('in_progress', $started->status);
-        self::assertNotNull($started->started_at);
+        self::assertSame('in_progress', $started->getStatus());
+        self::assertNotNull($started->getStartedAt());
     }
 
     private function seed(int $n): void

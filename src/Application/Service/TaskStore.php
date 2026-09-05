@@ -13,6 +13,7 @@ use Semitexa\Orm\OrmManager;
 use Semitexa\Orm\Query\Direction;
 use Semitexa\Orm\Repository\DomainRepository;
 use Semitexa\Tasks\Application\Db\MySQL\Model\TaskResource;
+use Semitexa\Tasks\Domain\Model\Task;
 use Semitexa\Tasks\Domain\Enum\TaskStatus;
 
 /**
@@ -63,17 +64,17 @@ final class TaskStore
         ?int $etaSeconds = null,
         ?\DateTimeImmutable $deadline = null,
         string $source = 'user',
-    ): TaskResource {
-        $task = new TaskResource(
+    ): Task {
+        $task = new Task(
             id: Uuid7::generate(),
-            tenant_id: $this->currentTenantId(),
+            tenantId: $this->currentTenantId(),
             title: trim($title) !== '' ? trim($title) : 'Untitled task',
             status: TaskStatus::Todo->value,
             progress: 0,
             automated: $automated,
             source: $source === 'assistant' ? 'assistant' : 'user',
-            created_at: new \DateTimeImmutable(),
-            eta_seconds: $etaSeconds,
+            createdAt: new \DateTimeImmutable(),
+            etaSeconds: $etaSeconds,
             deadline: $deadline,
         );
         $this->scoped()->insert($task);
@@ -90,23 +91,27 @@ final class TaskStore
      * created rows; active tasks carry the newest ids, so they are always in
      * the window while stale completed tasks fall off.
      *
-     * @return list<TaskResource>
+     * @return list<Task>
      */
     public function all(): array
     {
-        /** @var list<TaskResource> $rows */
+        /** @var list<Task> $rows */
         $rows = $this->scoped()->query()
             ->orderBy(TaskResource::column('id'), Direction::Desc)
             ->limit(self::MAX_LISTED)
-            ->fetchAllAs(TaskResource::class, $this->orm()->getMapperRegistry());
+            ->fetchAllAs(Task::class, $this->orm()->getMapperRegistry());
 
         return $rows;
     }
 
-    /** Automated tasks currently running — the tick's work-list. @return list<TaskResource> */
+    /**
+     * Automated tasks currently running — the tick's work-list.
+     *
+     * @return list<Task>
+     */
     public function automatedInProgress(): array
     {
-        /** @var list<TaskResource> $rows */
+        /** @var list<Task> $rows */
         $rows = $this->scoped()->findBy([
             'status' => TaskStatus::InProgress->value,
             'automated' => true,
@@ -115,26 +120,32 @@ final class TaskStore
         return $rows;
     }
 
-    /** Automated tasks not yet finished — the tick's full work-list. @return list<TaskResource> */
+    /**
+     * Automated tasks not yet finished — the tick's full work-list.
+     *
+     * @return list<Task>
+     */
     public function automatedActive(): array
     {
-        /** @var list<TaskResource> $rows */
+        /** @var list<Task> $rows */
         $rows = $this->scoped()->findBy(['automated' => true]);
 
         return array_values(array_filter(
             $rows,
-            static fn(TaskResource $t): bool => $t->status === TaskStatus::Todo->value
-                || $t->status === TaskStatus::InProgress->value,
+            static fn(Task $t): bool => $t->statusEnum() === TaskStatus::Todo
+                || $t->statusEnum() === TaskStatus::InProgress,
         ));
     }
 
-    public function find(string $id): ?TaskResource
+    public function find(string $id): ?Task
     {
-        return $this->scoped()->findById($id);
+        $task = $this->scoped()->findById($id);
+
+        return $task instanceof Task ? $task : null;
     }
 
     /** Move a task to in_progress, stamping started_at on first start. */
-    public function start(string $id): ?TaskResource
+    public function start(string $id): ?Task
     {
         $t = $this->find($id);
         if ($t === null) {
@@ -150,16 +161,16 @@ final class TaskStore
      * by id is a redundant per-item SELECT (N wasted queries per tick, per
      * worker). The resource-taking variants write directly.
      */
-    public function startOn(TaskResource $t): TaskResource
+    public function startOn(Task $t): Task
     {
         return $this->save($this->copy($t, [
             'status' => TaskStatus::InProgress->value,
-            'started_at' => $t->started_at ?? new \DateTimeImmutable(),
+            'startedAt' => $t->getStartedAt() ?? new \DateTimeImmutable(),
         ]));
     }
 
     /** Set progress 0–100; reaching 100 completes the task. */
-    public function setProgress(string $id, int $progress): ?TaskResource
+    public function setProgress(string $id, int $progress): ?Task
     {
         $t = $this->find($id);
         if ($t === null) {
@@ -173,21 +184,21 @@ final class TaskStore
      * {@see setProgress()} on a row already in hand — avoids the redundant
      * per-item re-`find()` in the tick loop (see {@see startOn()}).
      */
-    public function setProgressOn(TaskResource $t, int $progress): ?TaskResource
+    public function setProgressOn(Task $t, int $progress): ?Task
     {
         $progress = max(0, min(100, $progress));
         if ($progress >= 100) {
-            return $this->complete($t->id);
+            return $this->complete($t->getId());
         }
 
         return $this->save($this->copy($t, [
             'progress' => $progress,
             'status' => TaskStatus::InProgress->value,
-            'started_at' => $t->started_at ?? new \DateTimeImmutable(),
+            'startedAt' => $t->getStartedAt() ?? new \DateTimeImmutable(),
         ]));
     }
 
-    public function complete(string $id): ?TaskResource
+    public function complete(string $id): ?Task
     {
         $t = $this->find($id);
         if ($t === null) {
@@ -235,7 +246,7 @@ final class TaskStore
         return $result->rowCount === 1;
     }
 
-    public function setStatus(string $id, TaskStatus $status): ?TaskResource
+    public function setStatus(string $id, TaskStatus $status): ?Task
     {
         if ($status === TaskStatus::Done) {
             return $this->complete($id);
@@ -246,7 +257,7 @@ final class TaskStore
         }
         $changes = ['status' => $status->value];
         if ($status === TaskStatus::InProgress) {
-            $changes['started_at'] = $t->started_at ?? new \DateTimeImmutable();
+            $changes['startedAt'] = $t->getStartedAt() ?? new \DateTimeImmutable();
         }
         $updated = $this->save($this->copy($t, $changes));
         $this->reportTodayPlan();
@@ -267,27 +278,26 @@ final class TaskStore
     }
 
     /** @return TaskArray */
-    public function toArray(TaskResource $t): array
+    public function toArray(Task $t): array
     {
         $iso = static fn(?\DateTimeImmutable $d): ?string => $d?->format('c');
-        $status = TaskStatus::tryFrom($t->status) ?? TaskStatus::Todo;
 
         return [
-            'id' => $t->id,
-            'title' => $t->title,
-            'status' => $t->status,
-            'status_label' => $status->label(),
-            'progress' => $t->progress,
-            'automated' => $t->automated,
-            'source' => $t->source,
-            'created_at' => $t->created_at->format('c'),
-            'deadline' => $iso($t->deadline),
-            'started_at' => $iso($t->started_at),
-            'completed_at' => $iso($t->completed_at),
+            'id' => $t->getId(),
+            'title' => $t->getTitle(),
+            'status' => $t->getStatus(),
+            'status_label' => $t->statusEnum()->label(),
+            'progress' => $t->getProgress(),
+            'automated' => $t->isAutomated(),
+            'source' => $t->getSource(),
+            'created_at' => ($t->getCreatedAt() ?? new \DateTimeImmutable())->format('c'),
+            'deadline' => $iso($t->getDeadline()),
+            'started_at' => $iso($t->getStartedAt()),
+            'completed_at' => $iso($t->getCompletedAt()),
         ];
     }
 
-    private function save(TaskResource $t): TaskResource
+    private function save(Task $t): Task
     {
         $this->scoped()->update($t);
 
@@ -300,22 +310,22 @@ final class TaskStore
      *
      * @param array<string, mixed> $ch
      */
-    private function copy(TaskResource $t, array $ch): TaskResource
+    /**
+     * @param array<string, mixed> $ch keyed as the row was — translated once here
+     */
+    private function copy(Task $t, array $ch): Task
     {
-        return new TaskResource(
-            id: $t->id,
-            tenant_id: $t->tenant_id,
-            title: $ch['title'] ?? $t->title,
-            status: $ch['status'] ?? $t->status,
-            progress: $ch['progress'] ?? $t->progress,
-            automated: $ch['automated'] ?? $t->automated,
-            source: $t->source,
-            created_at: $t->created_at,
-            eta_seconds: array_key_exists('eta_seconds', $ch) ? $ch['eta_seconds'] : $t->eta_seconds,
-            deadline: array_key_exists('deadline', $ch) ? $ch['deadline'] : $t->deadline,
-            started_at: array_key_exists('started_at', $ch) ? $ch['started_at'] : $t->started_at,
-            completed_at: array_key_exists('completed_at', $ch) ? $ch['completed_at'] : $t->completed_at,
-        );
+        $renamed = [];
+        foreach ($ch as $key => $value) {
+            $renamed[match ($key) {
+                'eta_seconds' => 'etaSeconds',
+                'started_at' => 'startedAt',
+                'completed_at' => 'completedAt',
+                default => $key,
+            }] = $value;
+        }
+
+        return $t->with($renamed);
     }
 
     /**
@@ -356,7 +366,7 @@ final class TaskStore
 
     private function repository(): DomainRepository
     {
-        return $this->repository ??= $this->orm()->repository(TaskResource::class, TaskResource::class);
+        return $this->repository ??= $this->orm()->repository(TaskResource::class, Task::class);
     }
 
     private function orm(): OrmManager
