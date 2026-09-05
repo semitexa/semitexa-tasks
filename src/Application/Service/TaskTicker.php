@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Os\Application\Service\ConversationStore;
 use Semitexa\Os\Application\Service\ProcessRegistry;
+use Semitexa\Tasks\Domain\Enum\TaskStatus;
 
 /**
  * The one shared task-tick code path — advance automated tasks toward their ETA
@@ -75,7 +76,11 @@ final class TaskTicker
             foreach ($this->tasks->automatedActive() as $task) {
                 $eta = $task->getEtaSeconds() ?? 0;
 
-                if ($task->getStatus() === 'todo') {
+                // statusEnum(), not the raw column: automatedActive() admits an
+                // unrecognised stored status as Todo, and comparing the raw
+                // string left such a task in the work-list forever — listed
+                // every tick, started by none of them.
+                if ($task->statusEnum() === TaskStatus::Todo) {
                     $this->tasks->startOn($task); // row already in hand — no re-find
                     $this->processes->begin(
                         id: 'task:' . $task->getId(),

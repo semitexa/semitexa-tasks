@@ -79,24 +79,32 @@ final class TaskTickerTest extends TestCase
             )',
         );
 
-        $this->tasks = $this->overOrm(new TaskStore());
+        $this->tasks = new TaskStore();
+        $this->overOrm($this->tasks);
         $this->ticker = new TaskTicker();
 
         (new \ReflectionProperty(TaskTicker::class, 'tasks'))->setValue($this->ticker, $this->tasks);
         (new \ReflectionProperty(TaskTicker::class, 'processes'))
-            ->setValue($this->ticker, $this->overOrm(new ProcessRegistry()));
-        (new \ReflectionProperty(TaskTicker::class, 'conversation'))
-            ->setValue($this->ticker, $this->overOrm(new ConversationStore()));
+            ->setValue($this->ticker, $this->registry());
+        $conversation = new ConversationStore();
+        $this->overOrm($conversation);
+        (new \ReflectionProperty(TaskTicker::class, 'conversation'))->setValue($this->ticker, $conversation);
         (new \ReflectionProperty(TaskTicker::class, 'todayPlan'))
             ->setValue($this->ticker, new TodayPlanReporter());
     }
 
-    /** @template T of object @param T $service @return T */
-    private function overOrm(object $service): object
+    /** Point a bare-constructed store at this test's in-memory database. */
+    private function overOrm(object $service): void
     {
         (new \ReflectionProperty($service::class, 'orm'))->setValue($service, $this->orm);
+    }
 
-        return $service;
+    private function registry(): ProcessRegistry
+    {
+        $registry = new ProcessRegistry();
+        $this->overOrm($registry);
+
+        return $registry;
     }
 
     #[Test]
@@ -107,8 +115,26 @@ final class TaskTickerTest extends TestCase
         $counts = $this->ticker->tick();
 
         self::assertSame(1, $counts['started'], 'the tick must start an automated todo');
-        self::assertSame('in_progress', $this->tasks->find('t1')?->getStatus());
-        self::assertNotNull($this->tasks->find('t1')?->getStartedAt());
+        $started = $this->tasks->find('t1');
+        self::assertNotNull($started);
+        self::assertSame('in_progress', $started->getStatus());
+        self::assertNotNull($started->getStartedAt());
+    }
+
+    /**
+     * automatedActive() admits an unrecognised stored status as Todo, so the
+     * tick must decide on the same normalised value. Comparing the raw column
+     * left such a task listed every tick and started by none of them.
+     */
+    #[Test]
+    public function a_task_with_an_unrecognised_status_is_still_started(): void
+    {
+        $this->seedAutomated('t9', 'Rotate the logs', 'pending', eta: 60, startedAt: null);
+
+        $counts = $this->ticker->tick();
+
+        self::assertSame(1, $counts['started']);
+        self::assertSame('in_progress', $this->tasks->find('t9')?->getStatus() ?? '');
     }
 
     #[Test]
@@ -146,7 +172,7 @@ final class TaskTickerTest extends TestCase
 
         self::assertSame(1, $first['completed'], 'the ETA must complete the task');
         self::assertSame(0, $second['completed'], 'a completed task must not be announced twice');
-        self::assertSame('done', $this->tasks->find('t3')?->getStatus());
+        self::assertSame('done', $this->tasks->find('t3')?->getStatus() ?? '');
     }
 
     #[Test]
@@ -167,16 +193,17 @@ final class TaskTickerTest extends TestCase
         self::assertCount(1, $rows, "the day's plan row must exist");
         // The stored PK carries the registry's internal tenant prefix, which is
         // exactly why the reporter addresses the row by the producer id.
-        self::assertStringEndsWith('tasks:today:' . (new \DateTimeImmutable())->format('Y-m-d'), (string) $rows[0]['id']);
+        self::assertIsString($rows[0]['id']);
+        self::assertStringEndsWith('tasks:today:' . (new \DateTimeImmutable())->format('Y-m-d'), $rows[0]['id']);
         self::assertSame('1 of 2 done', $rows[0]['detail']);
+        self::assertIsNumeric($rows[0]['progress']);
         self::assertSame(50, (int) $rows[0]['progress']);
     }
 
     private function reporter(): TodayPlanReporter
     {
         $reporter = new TodayPlanReporter();
-        (new \ReflectionProperty(TodayPlanReporter::class, 'registry'))
-            ->setValue($reporter, $this->overOrm(new ProcessRegistry()));
+        (new \ReflectionProperty(TodayPlanReporter::class, 'registry'))->setValue($reporter, $this->registry());
 
         return $reporter;
     }
