@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Semitexa\Tasks\Application\Handler\PayloadHandler;
 
 use Semitexa\Core\Attribute\AsPayloadHandler;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
+use Semitexa\Os\Application\Service\OsPreferences;
 use Semitexa\Tasks\Application\Payload\Request\TasksAppPayload;
 
 /**
@@ -17,6 +19,9 @@ use Semitexa\Tasks\Application\Payload\Request\TasksAppPayload;
 #[AsPayloadHandler(payload: TasksAppPayload::class, resource: ResourceResponse::class)]
 final class TasksAppHandler implements TypedHandlerInterface
 {
+    #[InjectAsReadonly]
+    protected OsPreferences $prefs;
+
     public function handle(TasksAppPayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $html = <<<'HTML'
@@ -110,7 +115,7 @@ final class TasksAppHandler implements TypedHandlerInterface
     tasks=tasks||[];
     var open=tasks.filter(function(t){return t.status!=='done'&&t.status!=='cancelled';}).length;
     subEl.textContent = tasks.length+' task'+(tasks.length===1?'':'s')+' · '+open+' open';
-    if(!tasks.length){ listEl.innerHTML='<div class="empty">No tasks yet. Add one above — or ask Semi to.</div>'; return; }
+    if(!tasks.length){ listEl.innerHTML='<div class="empty">No tasks yet. Add one above — or ask %ANAME% to.</div>'; return; }
     listEl.innerHTML = tasks.map(function(t){
       var showBar = t.status==='in_progress' || (t.automated && t.status!=='done' && t.status!=='cancelled');
       var meta=[];
@@ -151,6 +156,10 @@ final class TasksAppHandler implements TypedHandlerInterface
 </script>
 </body></html>
 HTML;
+
+        // Nowdoc — the empty-state copy names the assistant, and the operator
+        // may have renamed her, so the one token is filled in here.
+        $html = str_replace('%ANAME%', htmlspecialchars($this->prefs->assistantName(), ENT_QUOTES), $html);
 
         return $resource
             ->setContent($html)
