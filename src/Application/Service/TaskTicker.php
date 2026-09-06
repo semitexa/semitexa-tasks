@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Tasks\Application\Service;
 
+use Semitexa\Os\Application\Service\OsReplies;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Os\Application\Service\ConversationStore;
@@ -87,7 +88,11 @@ final class TaskTicker
                         source: 'tasks',
                         title: $task->getTitle(),
                         progress: 0,
-                        detail: $eta > 0 ? \sprintf('timer · ~%ds to auto-complete', $eta) : null,
+                        detail: $eta > 0 ? OsReplies::say(
+                            'task.timer_eta',
+                            ['seconds' => $eta],
+                            'timer · ~{{seconds}}s to auto-complete',
+                        ) : null,
                     );
                     $started++;
                     continue;
@@ -109,7 +114,11 @@ final class TaskTicker
                         $this->processes->complete('task:' . $task->getId());
                         $this->conversation->append(
                             ConversationStore::ROLE_ASSISTANT,
-                            \sprintf('✅ Done — "%s" finished.', $task->getTitle()),
+                            OsReplies::say(
+                                'task.completed',
+                                ['title' => $task->getTitle()],
+                                '✅ Done — "{{title}}" finished.',
+                            ),
                             ['proactive' => true, 'source' => 'task', 'kind' => 'task_completed', 'task_id' => $task->getId()],
                         );
                         $completed++;
@@ -119,7 +128,11 @@ final class TaskTicker
                     $this->tasks->setProgressOn($task, $pct);
                     // Mirror into the registry with the honest semantics spelled
                     // out: this % is elapsed-vs-estimate, not measured work.
-                    $detail = \sprintf('timer · ~%ds to auto-complete', \max(0, $eta - $elapsed));
+                    $detail = OsReplies::say(
+                        'task.timer_eta',
+                        ['seconds' => \max(0, $eta - $elapsed)],
+                        'timer · ~{{seconds}}s to auto-complete',
+                    );
                     if ($this->processes->progress('task:' . $task->getId(), $pct, $detail) === null) {
                         // task predates its registry row (started before deploy) — register it now
                         $this->processes->begin(
