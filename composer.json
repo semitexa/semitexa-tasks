@@ -15,7 +15,8 @@
         "semitexa/orm": "*",
         "semitexa/update": "*",
         "semitexa/llm": "*",
-        "semitexa/os": "*"
+        "semitexa/os": "*",
+        "semitexa/authorization": "*"
     },
     "autoload": {
         "psr-4": {
