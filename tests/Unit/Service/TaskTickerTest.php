@@ -176,6 +176,10 @@ final class TaskTickerTest extends TestCase
         self::assertSame('done', $this->tasks->find('t3')?->getStatus() ?? '');
     }
 
+    /**
+     * The plan bar opens exactly one row for the day, counted in the reader's
+     * timezone.
+     */
     #[Test]
     public function the_plan_bar_opens_a_row_for_todays_tasks(): void
     {
