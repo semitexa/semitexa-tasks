@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Orm\Domain\Model\ConnectionConfig;
 use Semitexa\Orm\OrmManager;
 use Semitexa\Os\Application\Service\ConversationStore;
+use Semitexa\Os\Application\Service\OsPreferences;
 use Semitexa\Os\Application\Service\ProcessRegistry;
 use Semitexa\Tasks\Application\Service\TaskStore;
 use Semitexa\Tasks\Application\Service\TaskTicker;
@@ -175,6 +176,10 @@ final class TaskTickerTest extends TestCase
         self::assertSame('done', $this->tasks->find('t3')?->getStatus() ?? '');
     }
 
+    /**
+     * The plan bar opens exactly one row for the day, counted in the reader's
+     * timezone.
+     */
     #[Test]
     public function the_plan_bar_opens_a_row_for_todays_tasks(): void
     {
@@ -194,7 +199,11 @@ final class TaskTickerTest extends TestCase
         // The stored PK carries the registry's internal tenant prefix, which is
         // exactly why the reporter addresses the row by the producer id.
         self::assertIsString($rows[0]['id']);
-        self::assertStringEndsWith('tasks:today:' . (new \DateTimeImmutable())->format('Y-m-d'), $rows[0]['id']);
+        // The day is the reader's, not UTC's — the reporter works in the
+        // timezone OsPreferences reports. Comparing against a UTC date passed
+        // for most of the day and failed for the hours where the two disagree.
+        $today = (new \DateTimeImmutable())->setTimezone((new OsPreferences())->timezone())->format('Y-m-d');
+        self::assertStringEndsWith('tasks:today:' . $today, $rows[0]['id']);
         self::assertSame('1 of 2 done', $rows[0]['detail']);
         self::assertIsNumeric($rows[0]['progress']);
         self::assertSame(50, (int) $rows[0]['progress']);
