@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Tasks\Application\Payload\Request;
 
 use Semitexa\Authorization\Attribute\AsProtectedPayload;
-use Semitexa\Os\Domain\Contract\OsSurfacePayloadInterface;
+use Semitexa\Os\Domain\Contract\OsContentSurfaceInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
 
 /**
@@ -17,13 +17,13 @@ use Semitexa\Core\Http\Response\ResourceResponse;
  *
  * This window mounts under /os/app, so a visitor authenticated by the host
  * site's own login would satisfy #[AsProtectedPayload] exactly as an operator
- * does. OsSurfacePayloadInterface is what asks the narrower question.
+ * does. OsContentSurfaceInterface is what asks the narrower question.
  */
 #[AsProtectedPayload(
     path: '/os/app/tasks',
     methods: ['GET'],
     responseWith: ResourceResponse::class,
 )]
-final class TasksAppPayload implements OsSurfacePayloadInterface
+final class TasksAppPayload implements OsContentSurfaceInterface
 {
 }
