@@ -7,6 +7,7 @@ namespace Semitexa\Tasks\Application\Handler\PayloadHandler;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Contract\TypedHandlerInterface;
+use Semitexa\Core\Http\CspNonce;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Os\Application\Service\OsPreferences;
 use Semitexa\Tasks\Application\Payload\Request\TasksAppPayload;
@@ -162,7 +163,7 @@ HTML;
         $html = str_replace('%ANAME%', htmlspecialchars($this->prefs->assistantName(), ENT_QUOTES), $html);
 
         return $resource
-            ->setContent($html)
+            ->setContent(CspNonce::stamp($html))
             ->setHeader('Content-Type', 'text/html; charset=utf-8');
     }
 }
