@@ -9,7 +9,6 @@ use PHPUnit\Framework\TestCase;
 use Semitexa\Orm\Adapter\DatabaseAdapterInterface;
 use Semitexa\Orm\Domain\Model\ConnectionConfig;
 use Semitexa\Orm\OrmManager;
-use Semitexa\Tasks\Application\Db\MySQL\Model\TaskResource;
 use Semitexa\Tasks\Application\Service\TaskStore;
 
 /**
