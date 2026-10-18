@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Http\CspNonce;
 use Semitexa\Core\Http\Response\ResourceResponse;
+use Semitexa\Ssr\Application\Service\Asset\AssetManager;
 use Semitexa\Os\Application\Service\OsPreferences;
 use Semitexa\Tasks\Application\Payload\Request\TasksAppPayload;
 
@@ -69,27 +70,7 @@ final class TasksAppHandler implements TypedHandlerInterface
   :root{--accent-rgb:55,183,255;--line-rgb:148,163,184;--text3:#a8b8d4;--ok:#5eead4}
   :root[data-mode=light]{color-scheme:light;--bg:#f4f7fb;--panel:#ffffff;--line:rgba(100,116,139,.25);--text:#243447;
     --dim:#5b6c82;--accent:#1e7fb8;--accent-rgb:30,127,184;--line-rgb:100,116,139;--text3:#3b4c61;--ok:#0e8a72}
-</style><script>
-/* Follow the OS theme: pref lives server-side; 'auto' resolves with the shell's
-   exact rule (prefers-color-scheme, else dark 19:00-07:00). Self-resolution
-   works in web iframes AND OS-mode native windows. */
-(function(){
-  function applyMode(mode){
-    var eff=(mode==='light'||mode==='dark')?mode:(function(){
-      try{ if(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'; }catch(e){}
-      var h=new Date().getHours(); return (h>=19||h<7)?'dark':'light';
-    })();
-    var el=document.documentElement;
-    if(el.getAttribute('data-mode')!==eff){ el.setAttribute('data-mode',eff); el.style.colorScheme=eff; }
-  }
-  function syncMode(){
-    fetch('/os/preferences',{headers:{'Accept':'application/json'}})
-      .then(function(r){return r.json();}).then(function(d){ applyMode((d&&d.theme_mode)||'auto'); })
-      .catch(function(){});
-  }
-  syncMode(); window.addEventListener('focus', syncMode); setInterval(syncMode, 15000);
-})();
-</script>
+</style><script src="__THEME_SYNC_JS__"></script>
 </head>
 <body><div class="wrap">
   <h1>Tasks</h1>
@@ -100,67 +81,22 @@ final class TasksAppHandler implements TypedHandlerInterface
     <input type="number" id="eta" placeholder="sec" min="1" title="Auto-complete after N seconds" style="display:none">
     <button class="btn" id="add">Add</button>
   </div>
-  <ul id="list"></ul>
+  <ul id="list" data-aname="%ANAME%"></ul>
 </div>
-<script>
-(function(){
-  var listEl=document.getElementById('list'), subEl=document.getElementById('sub');
-  var titleEl=document.getElementById('title'), autoEl=document.getElementById('auto'), etaEl=document.getElementById('eta');
-  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
-  autoEl.addEventListener('change',function(){ etaEl.style.display=autoEl.checked?'':'none'; });
-
-  function when(iso){ if(!iso) return null; try{ var d=new Date(iso); return d.toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return iso; } }
-  function overdue(t){ return t.deadline && t.status!=='done' && t.status!=='cancelled' && new Date(t.deadline) < new Date(); }
-
-  function render(tasks){
-    tasks=tasks||[];
-    var open=tasks.filter(function(t){return t.status!=='done'&&t.status!=='cancelled';}).length;
-    subEl.textContent = tasks.length+' task'+(tasks.length===1?'':'s')+' · '+open+' open';
-    if(!tasks.length){ listEl.innerHTML='<div class="empty">No tasks yet. Add one above — or ask %ANAME% to.</div>'; return; }
-    listEl.innerHTML = tasks.map(function(t){
-      var showBar = t.status==='in_progress' || (t.automated && t.status!=='done' && t.status!=='cancelled');
-      var meta=[];
-      if(t.started_at) meta.push('<span>started '+when(t.started_at)+'</span>');
-      if(t.deadline) meta.push('<span class="'+(overdue(t)?'over':'')+'">due '+when(t.deadline)+'</span>');
-      if(t.completed_at) meta.push('<span>done '+when(t.completed_at)+'</span>');
-      var acts='';
-      if(t.status==='todo') acts+='<button class="btn mini" data-act="start" data-id="'+t.id+'">Start</button>';
-      if(t.status!=='done'&&t.status!=='cancelled') acts+='<button class="btn mini go" data-act="complete" data-id="'+t.id+'">Done</button>';
-      acts+='<button class="btn x" data-act="delete" data-id="'+t.id+'" title="Delete">&times;</button>';
-      return '<li class="'+(t.status==='done'?'done':'')+'">'
-        + '<div class="row"><span class="pill '+t.status+'">'+esc(t.status_label)+'</span>'
-        + '<span class="title">'+esc(t.title)+'</span>'
-        + (t.automated?'<span class="auto">auto</span>':'')
-        + '<span class="acts">'+acts+'</span></div>'
-        + (showBar?'<div class="bar"><i style="width:'+(t.progress||0)+'%"></i></div>':'')
-        + (meta.length?'<div class="meta">'+meta.join('')+'</div>':'')
-        + '</li>';
-    }).join('');
-  }
-
-  function load(){ fetch('/os/app/tasks/list',{headers:{'Accept':'application/json'}}).then(function(r){return r.json();}).then(function(d){ render(d.tasks); }).catch(function(){}); }
-  function mutate(body){ return fetch('/os/app/tasks/mutate',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(d){ render(d.tasks); }).catch(function(){}); }
-
-  document.getElementById('add').addEventListener('click',function(){
-    var title=titleEl.value.trim(); if(!title) return;
-    var body={action:'create',title:title,automated:autoEl.checked};
-    if(autoEl.checked){ var e=parseInt(etaEl.value,10); body.etaSeconds=(e>0?e:20); }
-    titleEl.value=''; etaEl.value=''; autoEl.checked=false; etaEl.style.display='none'; titleEl.focus();
-    mutate(body);
-  });
-  titleEl.addEventListener('keydown',function(e){ if(e.key==='Enter') document.getElementById('add').click(); });
-  listEl.addEventListener('click',function(e){ var b=e.target.closest('[data-act]'); if(!b) return; mutate({action:b.dataset.act,id:b.dataset.id}); });
-
-  load();
-  setInterval(load, 3000);   // reflect background-tick progress live
-})();
-</script>
+<script src="__TASKS_APP_JS__"></script>
 </body></html>
 HTML;
 
         // Nowdoc — the empty-state copy names the assistant, and the operator
         // may have renamed her, so the one token is filled in here.
         $html = str_replace('%ANAME%', htmlspecialchars($this->prefs->assistantName(), ENT_QUOTES), $html);
+
+        // The page's scripts are static assets (fingerprinted, cached immutable);
+        // nothing executable is left inline.
+        $html = strtr($html, [
+            '__THEME_SYNC_JS__' => AssetManager::getUrl('js/app-theme-sync.js', 'os'),
+            '__TASKS_APP_JS__' => AssetManager::getUrl('js/tasks-app.js', 'tasks'),
+        ]);
 
         return $resource
             ->setContent(CspNonce::stamp($html))
