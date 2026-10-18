@@ -13,7 +13,9 @@ async function signIn(page: Page): Promise<void> {
     await page.locator('input[name="email"]').fill(EMAIL);
     await page.locator('input[name="password"]').fill(PASSWORD);
     await Promise.all([
-        page.waitForLoadState('domcontentloaded'),
+        // The login page already reached domcontentloaded; only leaving it
+        // proves the POST finished and the session cookie is set.
+        page.waitForURL((url) => !url.pathname.startsWith('/os/login')),
         page.locator('form button[type="submit"], form input[type="submit"]').first().click(),
     ]);
 }

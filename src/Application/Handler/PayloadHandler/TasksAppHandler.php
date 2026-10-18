@@ -67,6 +67,7 @@ final class TasksAppHandler implements TypedHandlerInterface
   .meta .over { color:#e0655f; }
   .acts { display:flex; gap:6px; }
   .empty { color:var(--dim); text-align:center; padding:40px 10px; }
+  .err { color:#e0655f; font-size:13px; margin:0 0 6px; }
   :root{--accent-rgb:55,183,255;--line-rgb:148,163,184;--text3:#a8b8d4;--ok:#5eead4}
   :root[data-mode=light]{color-scheme:light;--bg:#f4f7fb;--panel:#ffffff;--line:rgba(100,116,139,.25);--text:#243447;
     --dim:#5b6c82;--accent:#1e7fb8;--accent-rgb:30,127,184;--line-rgb:100,116,139;--text3:#3b4c61;--ok:#0e8a72}
@@ -81,6 +82,7 @@ final class TasksAppHandler implements TypedHandlerInterface
     <input type="number" id="eta" placeholder="sec" min="1" title="Auto-complete after N seconds" style="display:none">
     <button class="btn" id="add">Add</button>
   </div>
+  <div class="err" id="err" role="alert" hidden></div>
   <ul id="list" data-aname="%ANAME%"></ul>
 </div>
 <script src="__TASKS_APP_JS__"></script>

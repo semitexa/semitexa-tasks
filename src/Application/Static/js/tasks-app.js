@@ -1,6 +1,12 @@
 (function(){
-  var listEl=document.getElementById('list'), subEl=document.getElementById('sub');
-  var titleEl=document.getElementById('title'), autoEl=document.getElementById('auto'), etaEl=document.getElementById('eta');
+  // Every lookup goes through the component root — the .wrap this script
+  // follows — never the whole document.
+  var me=document.currentScript, prev=me&&me.previousElementSibling;
+  var root=(prev&&prev.classList.contains('wrap'))?prev:document.querySelector('.wrap');
+  if(!root) return;
+  var listEl=root.querySelector('#list'), subEl=root.querySelector('#sub'), errEl=root.querySelector('#err');
+  var titleEl=root.querySelector('#title'), autoEl=root.querySelector('#auto'), etaEl=root.querySelector('#eta'), addEl=root.querySelector('#add');
+  if(!listEl||!subEl||!titleEl||!autoEl||!etaEl||!addEl) return;
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
   autoEl.addEventListener('change',function(){ etaEl.style.display=autoEl.checked?'':'none'; });
 
@@ -34,16 +40,30 @@
   }
 
   function load(){ fetch('/os/app/tasks/list',{headers:{'Accept':'application/json'}}).then(function(r){return r.json();}).then(function(d){ render(d.tasks); }).catch(function(){}); }
-  function mutate(body){ return fetch('/os/app/tasks/mutate',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(d){ render(d.tasks); }).catch(function(){}); }
+  function showErr(msg){ if(!errEl) return; errEl.textContent=msg||''; errEl.hidden=!msg; }
+  // Resolves true only when both the HTTP answer and the mutation itself
+  // report success; a failure is shown, never swallowed.
+  function mutate(body){
+    return fetch('/os/app/tasks/mutate',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .then(function(d){ if(d&&d.tasks) render(d.tasks); if(!d||!d.ok) throw 0; showErr(''); return true; })
+      .catch(function(){ showErr('Couldn’t save the change — try again.'); return false; });
+  }
 
-  document.getElementById('add').addEventListener('click',function(){
+  addEl.addEventListener('click',function(){
     var title=titleEl.value.trim(); if(!title) return;
     var body={action:'create',title:title,automated:autoEl.checked};
     if(autoEl.checked){ var e=parseInt(etaEl.value,10); body.etaSeconds=(e>0?e:20); }
-    titleEl.value=''; etaEl.value=''; autoEl.checked=false; etaEl.style.display='none'; titleEl.focus();
-    mutate(body);
+    // The form keeps what was typed until the task really exists; Add stays
+    // off meanwhile so a second click cannot create it twice.
+    addEl.disabled=true;
+    mutate(body).then(function(ok){
+      addEl.disabled=false;
+      if(!ok) return;
+      titleEl.value=''; etaEl.value=''; autoEl.checked=false; etaEl.style.display='none'; titleEl.focus();
+    });
   });
-  titleEl.addEventListener('keydown',function(e){ if(e.key==='Enter') document.getElementById('add').click(); });
+  titleEl.addEventListener('keydown',function(e){ if(e.key==='Enter') addEl.click(); });
   listEl.addEventListener('click',function(e){ var b=e.target.closest('[data-act]'); if(!b) return; mutate({action:b.dataset.act,id:b.dataset.id}); });
 
   load();
