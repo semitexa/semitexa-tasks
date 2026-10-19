@@ -85,6 +85,7 @@ final class TasksAppHandler implements TypedHandlerInterface
   <div class="err" id="err" role="alert" hidden></div>
   <ul id="list" data-aname="%ANAME%"></ul>
 </div>
+<script type="module" src="__UI_CORE_JS__"></script>
 <script src="__TASKS_APP_JS__"></script>
 </body></html>
 HTML;
@@ -98,6 +99,8 @@ HTML;
         $html = strtr($html, [
             '__THEME_SYNC_JS__' => AssetManager::getUrl('js/app-theme-sync.js', 'os'),
             '__TASKS_APP_JS__' => AssetManager::getUrl('js/tasks-app.js', 'tasks'),
+            // Platform UI's client core holds the CSRF rule every write here needs.
+            '__UI_CORE_JS__' => AssetManager::getUrl('js/ui-core.js', 'platform-ui'),
         ]);
 
         return $resource

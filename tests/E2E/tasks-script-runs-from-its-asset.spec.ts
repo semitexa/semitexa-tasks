@@ -37,3 +37,34 @@ test('the Tasks window runs its script from the asset', async ({ page }) => {
     expect(inline, 'no executable inline script is left').toBe(0);
     expect(errors).toEqual([]);
 });
+
+test('what is typed while a task is being created stays in the form', async ({ page }) => {
+    await signIn(page);
+    await page.goto('/os/app/tasks', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#sub')).toHaveText(/\d+ tasks? · \d+ open/);
+
+    // Held until the second title is typed: the create answers only then.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route('**/os/app/tasks/mutate', async (route) => {
+        await held;
+        await route.continue();
+    });
+
+    const first = `e2e-pending-${Date.now()}`;
+    await page.locator('#title').fill(first);
+    const created = page.waitForResponse('**/os/app/tasks/mutate');
+    await page.locator('#add').click();
+    await page.locator('#title').fill('the next one');
+    release();
+    await created;
+
+    await expect(page.locator('#list .title', { hasText: first })).toHaveCount(1);
+    await expect(page.locator('#title')).toHaveValue('the next one');
+
+    // Leave no row behind for other specs.
+    await page.unroute('**/os/app/tasks/mutate');
+    const row = page.locator('#list li', { has: page.locator('.title', { hasText: first }) });
+    await row.locator('[data-act="delete"]').click();
+    await expect(page.locator('#list .title', { hasText: first })).toHaveCount(0);
+});

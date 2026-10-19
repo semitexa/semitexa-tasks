@@ -43,8 +43,15 @@
   function showErr(msg){ if(!errEl) return; errEl.textContent=msg||''; errEl.hidden=!msg; }
   // Resolves true only when both the HTTP answer and the mutation itself
   // report success; a failure is shown, never swallowed.
+  // Every write carries the double-submit CSRF token: without it CsrfListener
+  // answered 403 and no task could be added. The rule is Platform UI's client
+  // core, a module, so it is looked up when a write happens, not at load.
+  function csrfHeaders(headers){
+    var core=window.SemitexaUi&&window.SemitexaUi.core;
+    return core&&typeof core.withCsrf==='function'?core.withCsrf('POST',headers):headers;
+  }
   function mutate(body){
-    return fetch('/os/app/tasks/mutate',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)})
+    return fetch('/os/app/tasks/mutate',{method:'POST',headers:csrfHeaders({'Content-Type':'application/json','Accept':'application/json'}),body:JSON.stringify(body)})
       .then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(d){ if(d&&d.tasks) render(d.tasks); if(!d||!d.ok) throw 0; showErr(''); return true; })
       .catch(function(){ showErr('Couldn’t save the change — try again.'); return false; });
@@ -57,9 +64,12 @@
     // The form keeps what was typed until the task really exists; Add stays
     // off meanwhile so a second click cannot create it twice.
     addEl.disabled=true;
+    var sent={title:titleEl.value,auto:autoEl.checked,eta:etaEl.value};
     mutate(body).then(function(ok){
       addEl.disabled=false;
       if(!ok) return;
+      // Typed into while the request was out: that is the next task, not this one.
+      if(titleEl.value!==sent.title||autoEl.checked!==sent.auto||etaEl.value!==sent.eta) return;
       titleEl.value=''; etaEl.value=''; autoEl.checked=false; etaEl.style.display='none'; titleEl.focus();
     });
   });
