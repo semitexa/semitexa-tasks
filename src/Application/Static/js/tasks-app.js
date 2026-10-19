@@ -1,8 +1,8 @@
 (function(){
-  // Every lookup goes through the component root — the .wrap this script
-  // follows — never the whole document.
-  var me=document.currentScript, prev=me&&me.previousElementSibling;
-  var root=(prev&&prev.classList.contains('wrap'))?prev:document.querySelector('.wrap');
+  // Every lookup goes through the component root, never the whole document.
+  // A module, loaded after Platform UI's client core: modules run in document
+  // order, so the core every write needs is there before any write can happen.
+  var root=document.querySelector('.wrap');
   if(!root) return;
   var listEl=root.querySelector('#list'), subEl=root.querySelector('#sub'), errEl=root.querySelector('#err');
   var titleEl=root.querySelector('#title'), autoEl=root.querySelector('#auto'), etaEl=root.querySelector('#eta'), addEl=root.querySelector('#add');
@@ -44,14 +44,15 @@
   // Resolves true only when both the HTTP answer and the mutation itself
   // report success; a failure is shown, never swallowed.
   // Every write carries the double-submit CSRF token: without it CsrfListener
-  // answered 403 and no task could be added. The rule is Platform UI's client
-  // core, a module, so it is looked up when a write happens, not at load.
+  // answered 403 and no task could be added. No core, no write: a request
+  // without the token would only be refused.
   function csrfHeaders(headers){
     var core=window.SemitexaUi&&window.SemitexaUi.core;
-    return core&&typeof core.withCsrf==='function'?core.withCsrf('POST',headers):headers;
+    if(!core||typeof core.withCsrf!=='function') throw new Error('Platform UI client core is not loaded');
+    return core.withCsrf('POST',headers);
   }
   function mutate(body){
-    return fetch('/os/app/tasks/mutate',{method:'POST',headers:csrfHeaders({'Content-Type':'application/json','Accept':'application/json'}),body:JSON.stringify(body)})
+    return Promise.resolve().then(function(){ return fetch('/os/app/tasks/mutate',{method:'POST',headers:csrfHeaders({'Content-Type':'application/json','Accept':'application/json'}),body:JSON.stringify(body)}); })
       .then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(d){ if(d&&d.tasks) render(d.tasks); if(!d||!d.ok) throw 0; showErr(''); return true; })
       .catch(function(){ showErr('Couldn’t save the change — try again.'); return false; });

@@ -86,7 +86,7 @@ final class TasksAppHandler implements TypedHandlerInterface
   <ul id="list" data-aname="%ANAME%"></ul>
 </div>
 <script type="module" src="__UI_CORE_JS__"></script>
-<script src="__TASKS_APP_JS__"></script>
+<script type="module" src="__TASKS_APP_JS__"></script>
 </body></html>
 HTML;
 
