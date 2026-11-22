@@ -104,6 +104,33 @@ final class TaskStoreBuiltBareSeesTheTenantTest extends TestCase
         );
     }
 
+    /**
+     * Outside a coroutine semitexa/tenancy keeps the tenant in a static and
+     * core's store asks it. Application::handleRequest() and the queue worker
+     * empty the coroutine-local store first thing; a bare store used straight
+     * after that must still file the task under the active tenant.
+     */
+    #[Test]
+    public function a_bare_store_used_straight_after_a_request_start_keeps_the_tenant(): void
+    {
+        $cli = new \ReflectionProperty(CoroutineLocal::class, 'cliStore');
+        $cliBefore = $cli->getValue();
+        $active = self::tenant('tenant-acme');
+        // What semitexa/tenancy's store does on first use.
+        $readerBefore = DefaultTenantContextStore::readOutsideCoroutineFrom(
+            static fn (): TenantContextInterface => $active,
+        );
+        try {
+            CoroutineLocal::beginRequest();
+            $this->bareStore()->create('Acme migration');
+        } finally {
+            DefaultTenantContextStore::readOutsideCoroutineFrom($readerBefore);
+            $cli->setValue(null, $cliBefore);
+        }
+
+        self::assertSame(['tenant-acme' => 'Acme migration'], $this->titlesByTenant());
+    }
+
     private function bareStore(): TaskStore
     {
         $store = new TaskStore();
@@ -131,7 +158,12 @@ final class TaskStoreBuiltBareSeesTheTenantTest extends TestCase
 
     private static function activate(string $tenantId): void
     {
-        CoroutineLocal::set(DefaultTenantContextStore::CONTEXT_KEY, new class ($tenantId) implements TenantContextInterface {
+        CoroutineLocal::set(DefaultTenantContextStore::CONTEXT_KEY, self::tenant($tenantId));
+    }
+
+    private static function tenant(string $tenantId): TenantContextInterface
+    {
+        return new class ($tenantId) implements TenantContextInterface {
             public function __construct(private readonly string $id) {}
 
             public function getTenantId(): string
@@ -148,6 +180,6 @@ final class TaskStoreBuiltBareSeesTheTenantTest extends TestCase
             {
                 return false;
             }
-        });
+        };
     }
 }
