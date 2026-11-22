@@ -49,6 +49,9 @@ final class TaskStoreBuiltBareSeesTheTenantTest extends TestCase
     #[Test]
     public function outside_a_coroutine_one_tenant_never_lists_or_completes_anothers_task(): void
     {
+        // The slot is process-wide out here: whatever another fixture left in
+        // it is put back, not wiped.
+        $previous = CoroutineLocal::get(DefaultTenantContextStore::CONTEXT_KEY);
         try {
             self::activate('tenant-acme');
             $acme = $this->bareStore()->create('Acme migration');
@@ -62,8 +65,11 @@ final class TaskStoreBuiltBareSeesTheTenantTest extends TestCase
             self::activate('tenant-acme');
             self::assertCount(1, $this->bareStore()->all());
         } finally {
-            // This test filled the process-wide half of the slot; it empties it.
-            CoroutineLocal::remove(DefaultTenantContextStore::CONTEXT_KEY);
+            if ($previous === null) {
+                CoroutineLocal::remove(DefaultTenantContextStore::CONTEXT_KEY);
+            } else {
+                CoroutineLocal::set(DefaultTenantContextStore::CONTEXT_KEY, $previous);
+            }
         }
 
         self::assertSame(
