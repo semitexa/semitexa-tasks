@@ -6,6 +6,7 @@ namespace Semitexa\Tasks\Application\Service;
 
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Tenant\DefaultTenantContextStore;
 use Semitexa\Core\Tenant\TenantContextAccess;
 use Semitexa\Core\Tenant\TenantContextStoreInterface;
 use Semitexa\Orm\Application\Service\Uuid7;
@@ -41,9 +42,9 @@ final class TaskStore
     protected TodayPlanReporter $todayPlan;
 
     /**
-     * Ambient-tenant seam (coroutine-local), resolved AT CALL TIME. Also works
-     * when the store is constructed bare (invocable skills) — falls back to the
-     * 'default' sentinel then, same as {@see currentTenantId}.
+     * Ambient-tenant seam (coroutine-local), resolved AT CALL TIME. A store
+     * constructed bare (invocable skills) builds core's default store, which
+     * reads the same slot: {@see tenantContextStore()}.
      */
     #[InjectAsReadonly]
     protected TenantContextStoreInterface $tenantContextStore;
@@ -355,13 +356,25 @@ final class TaskStore
     /**
      * Current tenant id, or the 'default' sentinel — never null, so the
      * fail-closed tenant filter and the raw claimComplete WHERE bind a concrete
-     * value. Tolerates a bare-constructed store (no injected seam).
+     * value. 'default' only when no tenant is active, never because the store
+     * was built bare.
      */
     private function currentTenantId(): string
     {
-        $context = isset($this->tenantContextStore) ? $this->tenantContextStore->tryGet() : null;
+        return TenantContextAccess::tenantIdOrDefault($this->tenantContextStore()->tryGet());
+    }
 
-        return TenantContextAccess::tenantIdOrDefault($context);
+    /**
+     * The ambient tenant store, injected or built.
+     *
+     * Core's store reads the slot the active store wrote, so one built here
+     * sees the tenant an injected one would. Answering 'default' when the
+     * property was unset, which is what this did, filed every tenant's rows
+     * under one id for each caller that builds this store with `new`.
+     */
+    private function tenantContextStore(): TenantContextStoreInterface
+    {
+        return $this->tenantContextStore ??= new DefaultTenantContextStore();
     }
 
     private function repository(): DomainRepository
